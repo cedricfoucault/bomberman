@@ -1,8 +1,69 @@
 import socket
 import struct
 import socket_utils
+import inspect
+import enum
 
 NUM_PLAYERS = 4
+
+def get_user_attributes(cls):
+    boring = dir(type('dummy', (object,), {}))
+    return [item
+            for item in inspect.getmembers(cls)
+            if item[0] not in boring and not callable(getattr(cls, item[0]))]
+
+Action = enum.enum("Action",
+    ERROR = 0,
+    DEATH = 1,
+    
+    DO_NOTHING = 16,
+    MOVE_RIGHT = 17,
+    MOVE_UP    = 18,
+    MOVE_LEFT  = 19,
+    MOVE_DOWN  = 20,
+    
+    POSE_BOMB  = 32
+)
+
+PacketType = enum.enum("PacketType",
+    ACTION = 42
+)
+
+# class Action:
+#     ERROR = 0
+#     DEATH = 1
+#     
+#     DO_NOTHING = 16
+#     MOVE_RIGHT = 17
+#     MOVE_UP    = 18
+#     MOVE_LEFT  = 19
+#     MOVE_DOWN  = 20
+#     
+#     POSE_BOMB  = 32
+#     
+#     @classmethod
+#     def to_str(cls, action):
+#         return cls.str_values[action]
+#         # the str_values dict is created just after the class declaration
+#         # and defined below
+# 
+# # str_values is a dictionary that matches an action with its string representation
+# # (e.g. str_values[32] == "pose bomb")
+# Action.str_values = dict( (value, name.lower().replace('_', ' '))
+#     for name, value in get_user_attributes(Action)
+# )
+# 
+# class PacketType:
+#     ACTION = 42
+#     
+#     @classmethod
+#     def to_str(cls, action):
+#         return cls.str_values[action]
+#         
+# PacketType.str_values = dict( (value, name.lower().replace('_', ' '))
+#     for name, value in get_user_attributes(PacketType)
+# )
+
 
 class ActionRequestPacket:
     """An action packet is composed of:
@@ -16,6 +77,12 @@ class ActionRequestPacket:
     def __init__(self, turn, action):
         self.turn = turn
         self.action = action
+    
+    def __repr__(self):
+        return "(%s | %s)" % (repr(self.turn), repr(self.action))
+        
+    def __str__(self):
+        return "(turn: %s | action: %s)" % (str(self.turn), Action.to_str(self.action))
     
     def get_raw_data(self):
         return struct.pack("<IB", self.turn, self.action)
@@ -37,6 +104,15 @@ class ActionsCommitPacket:
     def __init__(self, turn, actions):
         self.turn = turn
         self.actions = actions
+    
+    def __repr__(self):
+        return "(%s | %s)" % (repr(self.turn), repr(self.actions))
+        
+    def __str__(self):
+        actions_str = ["player %d: %s" % (index + 1, Action.to_str(action))
+            for index, action in enumerate(self.actions)
+        ]
+        return "(turn: %s | actions: (%s))" % (str(self.turn), ", ".join(actions_str))
     
     def get_raw_data(self):
         return struct.pack('<I' + 'B' * NUM_PLAYERS, self.turn, *self.actions)
@@ -60,7 +136,13 @@ class GamePacket:
     def __init__(self, ptype, payload):
         self.type = ptype
         self.payload = payload
-
+        
+    def __repr__(self):
+        return "(%s | %s)" % (repr(self.type), repr(self.payload))
+        
+    def __str__(self):
+        return "(type: %s | payload: %s)" % (PacketType.to_str(self.type), str(self.payload))
+    
     def send(self, socket):
         packet = struck.pack("B", self.ptype) + self.payload
         socket_utils.send(socket, packet)
@@ -92,7 +174,6 @@ class GamePacket:
             raise socket.error("socket connection broken")
         else:
             return ptype
-
 
 class RequestPacket(GamePacket):
     """A request packet is a game packet designed to be a client request
