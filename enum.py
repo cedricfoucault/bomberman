@@ -17,6 +17,7 @@ def enum(name, **enums):
     NewClass.str_values = dict( (value, name.lower().replace('_', ' '))
         for name, value in get_user_attributes(NewClass)
     )
+    NewClass.values = NewClass.str_values.keys()
     # create a to_str class method for the enum
     def to_str(cls, val): return cls.str_values[val]
     to_str.__doc__ = "string representation of %s" % name

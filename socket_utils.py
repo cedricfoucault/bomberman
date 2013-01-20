@@ -13,7 +13,7 @@ def send(sock, data):
 def recv(sock, size):
     # call socket.recv() until we have actually received data of size "size"
     data = ''
-    while len(msg) < size:
+    while len(data) < size:
         chunk = sock.recv(size - len(data))
         if not chunk:
             raise socket.error("socket connection broken")
