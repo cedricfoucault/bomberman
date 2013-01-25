@@ -25,7 +25,8 @@ class ShutdownMixIn(object):
                 iter_fun(*args)
         finally:
             self._shutdown_request = False
-            self._do_on_shutdown()
+            if not self._silent_shutdown:
+                self._do_on_shutdown()
             self._is_shut_down.set()
             
     def _do_on_shutdown(self):
@@ -34,8 +35,11 @@ class ShutdownMixIn(object):
         May be overriden"""
         pass
         
-    def shutdown(self, non_blocking=False):
+    def shutdown(self, non_blocking=False, silent=False):
         """Stop the server from accepting new connections"""
+        # if the silent option is true, the process will be shut down
+        # without calling the usual _do_on_shutdown
+        self._silent_shutdown = silent
         self._shutdown_request = True
         if not non_blocking:
             self._is_shut_down.wait()
@@ -60,22 +64,41 @@ class BaseConnectionHandle(ShutdownMixIn):
     # dumb client counter, incremented every time a new client is instanced
     _client_counter = 0
     
-    def __init__(self, conn, client_addr, server, start=True):
+    def __init__(self, conn, client_addr, server, start=True, no_init=False):
         super(BaseConnectionHandle, self).__init__()
-        self.conn        = conn # the socket connecting the server with the client
-        self.client_addr = client_addr # the client's address
-        self.server      = server # a reference to the server owning the connection
-        self.thread      = threading.Thread( # the receiver thread
-            target=self._process_connection,
-              args=()
+        if not no_init:
+            self.conn        = conn # the socket connecting the server with the client
+            self.client_addr = client_addr # the client's address
+            self.server      = server # a reference to the server owning the connection
+            self.thread      = threading.Thread( # the receiver thread
+                target=self._process_connection,
+                  args=()
+            )
+            self.thread.daemon = self.__class__.daemon_threads
+            # a lock preventing two threads from writing at the same time
+            self._write_lock  = threading.Lock()
+            # get a client id
+            self.id = self.__class__._get_new_id()
+            if start:
+                self.start_handling()
+
+    @classmethod
+    def from_instance(cls, handle, start=True):
+        """Create a new connection handle from an existing one."""
+        new = cls(None, None, None, None, no_init=True)
+        new.conn        = handle.conn # the socket connecting the server with the client
+        new.client_addr = handle.client_addr # the client's address
+        new.server      = handle.server # a reference to the server owning the connection
+        new.thread      = threading.thread( # the receiver thread
+            target=new._process_connection
+            args=()
         )
-        self.thread.daemon = self.__class__.daemon_threads
-        # a lock preventing two threads from writing at the same time
-        self._write_lock  = threading.Lock()
-        # get a client id
-        self.id = self.__class__._get_new_id()
+        new.thread.daemon = cls.daemon_threads
+        new._write_lock = handle.thread
+        new.id          = handle.id # the client id
         if start:
-            self.start_handling()
+            new.start_handling()
+        return new
 
     def start_handling(self):
         """Start processing the connection"""
@@ -99,7 +122,7 @@ class BaseConnectionHandle(ShutdownMixIn):
                 try:
                     # try to read the packet
                     packet = self.__class__.packet_class.recv(self.conn)
-                    print "Received: " + str(packet)
+                    print "Received: " + str(packet) + " to " + str(self.client_addr)
                     # process it
                     self._process_client_packet(packet)
                     # this client is active, reset _time_left countdown
@@ -134,8 +157,11 @@ class BaseConnectionHandle(ShutdownMixIn):
         self._write_lock.acquire()
         # ------ enter critical section ------
         # send the packet through the connected socket
-        print "Sending " + str(packet)
-        packet.send(self.conn)
+        try:
+            packet.send(self.conn)
+            print "Sent " + str(packet) " to " + str(self.client_addr)
+        except socket.error, e:
+            self.shutdown(non_blocking=True)
         # ------ exit critical section -------
         self._write_lock.release()
     
@@ -159,7 +185,7 @@ class RecordConnectionHandle(BaseConnectionHandle):
     def _process_client_packet(self, packet):
         """Record any received packet"""
         self.server.record_packet(packet, self)
-        
+    
 class LobbyConnectionHandle(BaseConnectionHandle):
     """This type of connection will listen for 'create new party' packets
     (type 15) and ignore any other packet."""
@@ -182,21 +208,41 @@ class Server(ShutdownMixIn):
     # time interval between checks to a shutdown request (in secs)
     poll_interval = 0.5
     
-    def __init__(self, address, bind_and_listen=True):
+    def __init__(self, address, bind_and_listen=True, no_init=False):
         super(Server, self).__init__()
+        if not no_init:
+            # the server's address
+            self.address = address
+            # the server's listener socket
+            self.socket = socket.socket(self.address_family, self.socket_type)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # a maintained list of active connections
+            self._active_connections = []
+            # a lock used to access safely the active connections list
+            self._active_connections_lock = threading.Lock()
+            if bind_and_listen:
+                self.bind()
+                self.listen()
+    
+    # @classmethod
+    def from_server(cls, server):
+        """Create a new instance from an existing one, taking its
+        active connections and server socket."""
+        new = cls(None, no_init=True)
         # the server's address
-        self.address = address
+        new.address = server.address
         # the server's listener socket
-        self.socket = socket.socket(self.address_family, self.socket_type)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        # a maintained list of active connections
-        self._active_connections = []
-        # a lock used to access safely the active connections list
-        self._active_connections_lock = threading.Lock()
-        if bind_and_listen:
-            self.bind()
-            self.listen()
-            
+        new.socket = server.socket
+        # the list of active connections:
+        # convert the handle class used to process the connections
+        for handle in server._active_connections:
+            handle.shutdown(silent=True)
+        new._active_connections = [ cls.ConnectionHandle.from_instance(handle)
+            for handle in server._active_connections ]
+        # the lock used to access safely the active connections list
+        new._active_connections_lock = server._active_connections_lock
+        return new
+    
     def bind(self):
         """Bind the server socket to the given server address"""
         self.socket.bind(self.address)
@@ -277,6 +323,12 @@ class Server(ShutdownMixIn):
         about to be shut-down."""
         self._cleanup_connection(handle)
     
+    def _cleanup_connection(self, handle):
+        """Close the connection represented by handle
+        and remove it from the list of active connections."""
+        handle.close_connection()
+        self._remove_connection(handle)
+    
     def _cleanup_connections(self):
         """Close all shut-downed connections
         and remove them from the list of active connections"""
@@ -284,12 +336,6 @@ class Server(ShutdownMixIn):
             if handle.is_shut_down():
                 handle.close_connection()
                 self._remove_connection(handle)
-                
-    def _cleanup_connection(self, handle):
-        """Close the connection represented by handle
-        and remove it from the list of active connections."""
-        handle.close_connection()
-        self._remove_connection(handle)
     
     def close_all(self):
         """Close the server and all open connections"""
@@ -350,18 +396,20 @@ class LobbyServer(Server):
     ConnectionHandle = LobbyConnectionHandle
     SEND_INTERVAL = 0.5
     
-    def __init__(self, address, bind_and_listen=True):
+    def __init__(self, address, bind_and_listen=True, no_init=False):
         # init the superclass's fields
-        super(LobbyServer, self).__init__(address, bind_and_listen)
-        # init the new fields
-        # a list of current pending parties
-        self._parties = []
-        # a lock to access and update this resource safely
-        self._parties_lock = threading.Lock()
+        super(LobbyServer, self).__init__(address, bind_and_listen, no_init)
+        if not no_init:
+            # init the new fields
+            # a list of current pending parties
+            self._parties = []
+            # a lock to access and update this resource safely
+            self._parties_lock = threading.Lock()
+    
     
     def create_party(self):
         """Creates a new party."""
-        new_party = PendingPartyServer()
+        new_party = PendingPartyServer(None, self)
         
         self._parties_lock.acquire()
         # ------ enter critical section ------
@@ -376,7 +424,7 @@ class LobbyServer(Server):
         self._parties_lock.acquire()
         # ------ enter critical section ------
         # remove the given party server from the list of pending parties
-        self._parties = [p for p in self._parties if p != party]
+        self._parties = self._parties.remove(party)
         # ------ exit critical section -------
         self._parties_lock.release()
     
@@ -404,7 +452,7 @@ class LobbyServer(Server):
             self.send_parties()
             time.sleep(self.__class__.SEND_INTERVAL)
     
-# change PendingPartyServer to PartyServer?
+# change PendingPartyServer to IngamePartyServer?
 class PendingPartyServer(Server):
     """A PendingPartyServer is a waiting room for the players before
     a new game can start. It waits until the room is full, sending the current
@@ -413,12 +461,15 @@ class PendingPartyServer(Server):
     next_id = 0
     SEND_INTERVAL = 1
     
-    def __init__(self, address, bind_and_listen=True, max_players=4):
-        super(PendingPartyServer, self).__init__(address, bind_and_listen)
-        # assign the next available id and increment the global counter
-        self.id = self.__class__.next_id
-        self.__class__.next_id += 1
-        self.max_players = max_players
+    def __init__(self, address, lobby, bind_and_listen=True, no_init=False, max_players=4):
+        super(PendingPartyServer, self).__init__(address, bind_and_listen, no_init)
+        if not no_init:
+            # assign the next available id and increment the global counter
+            self.lobby = lobby
+            self.id = self.__class__.next_id
+            self.__class__.next_id += 1
+            self.max_players = max_players
+            self.n_players = 0
         
     @classmethod
     def create_new(cls):
@@ -434,15 +485,28 @@ class PendingPartyServer(Server):
         """Returns the PartyInfo object matching this server."""
         idp = self.id
         ip, port = self.address
-        n_players = len(self.get_active_connections())
+        # n_players = len(self.get_active_connections())
+        n_players = self.n_players
         max_players = self.max_players
         return PartyInfo(idp, ip, port, n_players, max_players)
+    
+    def handle_connection(self, conn, client_addr):
+        """Handle a new client connection."""
+        super(PendingPartyServer, self).handle_connection(conn, client_addr)
+        self.n_players += 1
+        if self.n_players == self.max_players:
+            self.start_game()
+    
+    def notice_connection_shutdown(self, handle):
+        """This function is called when a connection about to be shut-down."""
+        super(PendingPartyServer, self).notice_connection_shutdown(handle)
+        self.n_players -= 1
     
     def send_parties(self):
         """Send to all connected players the current party status
         (# players / # total expected)."""
-        n_players = len(self.get_active_connections())
-        packet = packets.PartyStatusPacket(n_players, self.max_players).wrap()
+        # n_players = len(self.get_active_connections())
+        packet = packets.PartyStatusPacket(self.n_players, self.max_players).wrap()
         self.send_to_all(packet)
     
     def send_parties_periodically(self):
@@ -450,23 +514,62 @@ class PendingPartyServer(Server):
         while not self.is_shut_down():
             self.send_parties()
             time.sleep(self.__class__.SEND_INTERVAL)
+            
+    def start_game(self):
+        """This function is called when a room is full and starts a new game,
+        sending an init packet to all players and becomes an (ingame) party
+        server."""
+        # send the init packet to all clients
+        pID = 0
+        k = self.max_players
+        dturn = IngamePartyServer.SEND_INTERVAL
+        n = gameconst.BOARD_WIDTH
+        m = gameconst.BOARD_HEIGHT
+        game_map = mapgen.generate(n, m)
+        tiles = game_map.get_tiles()
+        poss = [(0, 0) (n - 1, 0) (0, m - 1) (n - 1, m - 1)]
+        for handle in self.get_active_connections():
+            packet = packets.InitPacket(pID, k, dturn, n, m, tiles, poss)
+            handle.send_client(packet)
+            pID += 1
+            
+        # notice the server that this party is full and no longer accepts
+        # new clients
+        self.lobby.notice_party_shutdown(self):
+        
+        # morph into the "in-game" server
+        self.start_ingame()
+    
+    def start_ingame(self):
+        """docstring for start_ingame"""
+        # stop accepting new connections
+        self.shutdown(silent=True)
+        # create an IngamePartyServer instance from self
+        ingame_server = IngamePartyServer.from_server(self)
+        ingame_server.send_actions_periodically()
     
 
-# change PartyServer to GameServer?
-class PartyServer(Server):
+# change IngamePartyServer to IngamePartyServer/GameServer?
+class IngamePartyServer(Server):
     ConnectionHandle = RecordConnectionHandle
     # SEND_INTERVAL = ROUND_INTERVAL / 1000
     SEND_INTERVAL = 1
     
-    def __init__(self, address, bind_and_listen=True):
+    def __init__(self, address, bind_and_listen=True, no_init=False):
         # init the superclass's fields
-        super(PartyServer, self).__init__(address, bind_and_listen)
-        # init the new fields
-        # a record of the client actions
-        self._action_record = {}
-        # a lock to access and update this resource safely
+        super(PartyServer, self).__init__(address, bind_and_listen, no_init)
+        if not no_init:
+            # init the new fields
+            # a record of the client actions
+            self._action_record = {}
+            # a lock to access and update this resource safely
+            self._action_record_lock = threading.Lock()
+    
+    @classmethod
+    def from_server(cls, server):
+        new = super(cls).from_server(cls, server)
+        new._action_record = {}
         self._action_record_lock = threading.Lock()
-        pass
     
     def record_packet(self, packet, client):
         """Save a client action packet in the action record"""
@@ -512,9 +615,13 @@ class PartyServer(Server):
     
     def send_actions_periodically(self):
         """Periodically send to all players their list of committed actions."""
-        while not self.is_shut_down():
-            self.send_actions()
-            time.sleep(self.__class__.SEND_INTERVAL)
+        # while not self.is_shut_down():
+        #             self.send_actions()
+        #             time.sleep(self.__class__.SEND_INTERVAL)
+        self.do_while_not_shut_down(
+            iter_fun=self.send_actions(),
+                args=(self.__class__.SEND_INTERVAL, )
+        )
     
     def send_actions(self):
         # get the commited packets and flush the record
@@ -540,7 +647,7 @@ def main():
     PORT = 2049 # arbitrary port number to connect on for the chat
     LOCALHOST = '127.0.0.1' # ip adress of localhost
     # server = ParrotServer((LOCALHOST, PORT))
-    server = PartyServer((LOCALHOST, PORT))
+    server = IngamePartyServer((LOCALHOST, PORT))
     # server.serve_forever()
     threading.Thread(target=server.serve_forever).start()
     server.send_actions_periodically()

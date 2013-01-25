@@ -92,8 +92,23 @@ class GridMap(object):
         return '\n'.join([' '.join(['.' if t == EMPTY else '#' for t in row]) for row in self.grid])
     
 
+class GameMap(object):
+    """docstring for GameMap"""
+    def __init__(self, tiles):
+        super(GameMap, self).__init__()
+        self.tiles = tiles
+    
+    def get_tiles(self):
+        """Return the flattened array of tiles' content (enum)."""
+        return self.tiles
+    
+def generate(n, m):
+    tiles = [packets.TileContent.FREE] * (n * m)
+    return GameMap(tiles)
+
 if __name__ == '__main__':
-    m = GridMap(TILE_HEIGHT + 2, TILE_WIDTH + 2)
+    # m = GridMap(TILE_HEIGHT + 2, TILE_WIDTH + 2)
+    m = GridMap(BOARD_HEIGHT + 2, BOARD_WIDTH + 2)
     print m
     m.iter_next_gen(1)
     print "\n MAP (1)"
