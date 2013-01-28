@@ -1,3 +1,4 @@
+import packets
 import random
 from gameconst import *
 

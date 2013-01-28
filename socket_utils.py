@@ -1,4 +1,5 @@
 import socket
+import sys
 
 def send(sock, data):
     # call socket.send() until all data has been sent

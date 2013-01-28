@@ -81,6 +81,8 @@ TileContent = enum.enum("TileContent",
 
 class PartyInfo(object):
     """Represents a pending party, waiting for players"""
+    SIZE = struct.calcsize("<IBBBBHII")
+    
     def __init__(self, idp, ip, port, n_players, max_players):
         self.id = idp
         self.ip = ip
@@ -88,14 +90,29 @@ class PartyInfo(object):
         self.n_players = n_players
         self.max_players = max_players
 
+    def __repr__(self):
+        return "(%d | (%s, %d) | %d / %d)" % (self.id, self.ip, self.port,
+            self.n_players, self.max_players)
+
+    def __str__(self):
+        return "(id: %d | address: (%s, %d) | %d player(s) / %d max)" % (
+            self.id, self.ip, self.port, self.n_players, self.max_players)
+
     def encode(self):
         """Encode a single party"""
-        return struct.pack("<IS<I<H<I<I",
-            self.id, self.ip, self.port, self.n_players, self.max_players)
+        data = struct.pack("<I", self.id)
+        data += socket.inet_aton(self.ip)
+        data += struct.pack("<HII", self.port, self.n_players, self.max_players)
+        return data
+        # return (struct.pack("<I", self.id) + socket.inet_aton(self.ip) +
+        #             struct.pack("<H<I<I", self.port, self.n_players, self.max_players))
     
     @classmethod
     def decode(cls, data):
-        idp, ip, port, n_p, max_p = struct.unpack("<IS<I<H<I<I", data)
+        idp = struct.unpack("<I", data[:4])[0]
+        ip = socket.inet_ntoa(data[4:8])
+        port, n_p, max_p = struct.unpack("<HII", data[8:])
+        # idp, ip, port, n_p, max_p = struct.unpack("<IBBB<H<I<I", data)
         return cls(idp, ip, port, n_p, max_p)
     
 
@@ -124,6 +141,12 @@ class LobbyPacket(SubPacket):
         self.parties = parties
         
     
+    def __repr__(self):
+        return "(%d | %s)" % (self.n_parties, repr(self.parties))
+
+    def __str__(self):
+        return "(num parties: %d | parties: %s)" % (self.n_parties, str(self.parties))
+    
     def get_raw_data(self):
         data = struct.pack("<I", self.n_parties)
         for p in self.parties:
@@ -133,7 +156,8 @@ class LobbyPacket(SubPacket):
     @classmethod
     def process_raw_data(cls, data):
         n_parties = struct.unpack("<I", data[:4])[0]
-        parties = [ PartyInfo.decode(data[4 * (i + 1) : 4 * (i + 2)])
+        parties = [ PartyInfo.decode(
+            data[4 + PartyInfo.SIZE * i : 4 + PartyInfo.SIZE * (i + 1)])
             for i in range(n_parties) ]
         
         return cls(parties)
@@ -166,12 +190,18 @@ class PartyStatusPacket(SubPacket):
         self.max_players = max_players
 
     def get_raw_data(self):
-        return struct.pack("<I<I", self.n_players, self.max_players)
+        return struct.pack("<II", self.n_players, self.max_players)
 
     @classmethod
     def process_raw_data(cls, data):
-        n_players, max_players = struct.unpack("<I<I", data)
+        n_players, max_players = struct.unpack("<II", data)
         return cls(n_players, max_players)
+        
+    def __repr__(self):
+        return "(%d / %d)" % (self.n_players, self.max_players)
+
+    def __str__(self):
+        return "(%d player(s) / %d)" % (self.n_players, self.max_players)
 
 class InitPacket(SubPacket):
     """The server hosting the party send an init packet to each player
@@ -197,23 +227,35 @@ class InitPacket(SubPacket):
         # positions should be a list of k (x, y) couples
         self.positions = poss
     
+    def __repr__(self):
+        return "(%d | %d | %d | %d | %d | %s | %s)" % (
+            self.player_ID, self.n_players, self.turn_length,
+            self.width, self.height, repr(self.tiles), repr(self.positions))
+
+    def __str__(self):
+        return ("(id: %d | num. players: %d | turn length: %d ms | " +
+            "board size: (%dx%d) | tiles: %s | player positions: %s)") % (
+            self.player_ID, self.n_players, self.turn_length,
+            self.width, self.height, str(self.tiles), str(self.positions))
+    
     def get_raw_data(self):
-        data = struct.pack("<I<I<I<I<I", self.player_ID, self.n_players,
+        data = struct.pack("<IIIII", self.player_ID, self.n_players,
             self.turn_length, self.width, self.height)
         for t in self.tiles:
             data += struct.pack("B", t)
-        for pos in self.positions:
-            data += struct.pack("<I<I", pos)
+        for x, y in self.positions:
+            data += struct.pack("<II", x, y)
         return data
 
     @classmethod
     def process_raw_data(cls, data):
-        pID, k, dturn, n, m = struct.unpack("<I<I<I<I<I", data)
+        pID, k, dturn, n, m = struct.unpack("<IIIII", data[:20])
         data = data[20:]
-        tiles = [ TileInfo.decode(data)
+        tiles = [ struct.unpack("B", data[i])[0]
             for i in range(n * m) ]
-        data = data[(n * m) * TileInfo.SIZE:]
-        positions = [ struct.unpack("<I<I") for i in range(k)]
+        data = data[(n * m):]
+        positions = [ struct.unpack("<II", data[i * 8: (i + 1) * 8])
+            for i in range(k)]
         return cls(pID, k, dturn, n, m, tiles, positions)
 
 class ActionRequestPacket(SubPacket):
@@ -292,9 +334,16 @@ class GamePacket(object):
     - 1 byte for the packet type code
     and a payload (raw data)"""
     # payload_classes = {} # may be overriden by derived classes
+    payload_classes = {
+        PacketType.LOBBY: LobbyPacket,
+        PacketType.CREATE_PARTY: CreatePartyPacket,
+        
+        PacketType.PARTY_STATUS: PartyStatusPacket,
+        PacketType.INIT: InitPacket,
+    }
     
     def __init__(self, ptype, payload):
-        self.len = 1 + len(payload)
+        self.len = 1 + (len(payload) if payload else 0)
         self.type = ptype
         self.payload = payload
         
@@ -302,9 +351,12 @@ class GamePacket(object):
         return "(%s | %s)" % (repr(self.type), repr(self.payload))
         
     def __str__(self):
-        PayloadClass = self.__class__.payload_classes[self.type]
-        processed_payload = PayloadClass.process_raw_data(self.payload)
-        return "(type: %s | payload: %s)" % (PacketType.to_str(self.type), str(processed_payload))
+        if self.type in self.__class__.payload_classes:
+            PayloadClass = self.__class__.payload_classes[self.type]
+            processed_payload = PayloadClass.process_raw_data(self.payload)
+            return "(type: %s | payload: %s)" % (PacketType.to_str(self.type), str(processed_payload))
+        else:
+            return "(type: %d | payload: junk)" % (self.type)
         # return "(type: %s | payload: %s)" % (PacketType.to_str(self.type), str(self.payload))
     
     @classmethod
@@ -328,7 +380,13 @@ class GamePacket(object):
         # receive the whole packet (without the length)
         packet = socket_utils.recv(socket, length)
         # decode the packet type, leave payload as is
-        ptype, payload = struct.unpack("Bs", packet)
+        ptype = struct.unpack("B", packet[0])[0]
+        payload = packet[1:] if length >= 2 else ''
+        # if length >= 2:
+        #             ptype, payload = struct.unpack("Bs", packet)
+        #         else:
+        #             ptype = struct.unpack("B", packet)[0]
+        #             payload = None
         # # read the packet's type
         # ptype = cls._read_type(socket)
         # # read the packet's payload
@@ -358,6 +416,7 @@ class GamePacket(object):
     @classmethod
     def _read_len(cls, sock):
         # the first byte of the packet should indicate its length
+        print "reading length of packet"
         len_encoded = socket_utils.recv(sock, 4)
         return struct.unpack("<I", len_encoded)[0]
     
