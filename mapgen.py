@@ -24,7 +24,9 @@ class GridMap(object):
     
     def random_tile(self):
         i = random.randrange(100)
-        return WALL if i > 30 else EMPTY
+        # fact = 30
+        fact = 60
+        return WALL if i > fact else EMPTY
         # return random.getrandbits(1)
     
     def is_fixed(self, i, j):
@@ -104,7 +106,27 @@ class GameMap(object):
         return self.tiles
     
 def generate(n, m):
-    tiles = [packets.TileContent.FREE] * (n * m)
+    # self.grid = [ [ WALL if self.is_fixed_wall(i, j) else 
+    #                 EMPTY if self.is_fixed_empty(i, j) else
+    #                 self.random_tile()
+    #                 for j in range(self.width)] 
+    #             for i in range(self.height)]
+    gridmap = GridMap(n + 2, m + 2)
+    gridmap.iter_next_gen(2)
+    tiles = []
+    for i in range(n):
+        for j in range(m):
+            if gridmap.is_fixed_wall(i + 1, j + 1):
+                content = packets.TileContent.HARD_BLOCK
+            elif gridmap.grid[i + 1][j + 1] == WALL:
+                content = packets.TileContent.SOFT_BLOCK
+            else:
+                content = packets.TileContent.FREE
+            tiles.append(content)
+    # tiles = [ packets.TileContent.FREE if x == EMPTY
+    #           else packets.TileContent.WALL
+    #             for x in row for row in gridmap.grid ]
+    # tiles = [packets.TileContent.FREE] * (n * m)
     return GameMap(tiles)
 
 if __name__ == '__main__':

@@ -123,8 +123,8 @@ class PendingPartyClientConnectionHandle(ConnectionHandle):
             self.client = client # a reference to the client owning the connection
     
     def _process_packet(self, packet):
-        if self.client.is_ingame == False:
-            self._process_pending_packet(packet)
+        if self.client.is_ingame:
+            self._process_ingame_packet(packet)
         else:
             self._process_pending_packet(packet)
         # if packet.type == packets.PacketType.PARTY_STATUS:
@@ -261,7 +261,7 @@ class PartyClient(server.ShutdownMixIn):
         if debug: print "Connected to " + str(addr)
         self.conn = PendingPartyClientConnectionHandle(sock, addr, self)
     
-    def start_game(init_packet):
+    def start_game(self, init_packet):
         self.is_ingame = True
     
     def notice_connection_shutdown(self, handle):
@@ -311,15 +311,17 @@ class PartyClient(server.ShutdownMixIn):
 
 def main():
     """Main client process"""
-    PORT = 2049 # arbitrary port number to connect on for the chat
+    PORT = 42042 # arbitrary port number to connect on for the chat
     LOCALHOST = '127.0.0.1' # ip adress of localhost
+    # ip = LOCALHOST
+    ip = '192.168.1.2'
     client = LobbyClient()
-    client.connect((LOCALHOST, PORT))
+    client.connect((ip, PORT))
     print_thread = threading.Thread(
         target=client.print_parties_periodically
     )
     print_thread.start()
-    time.sleep(4)
+    # time.sleep(4)
     client.send_create_party_request()
     time.sleep(4)
     # client.send_create_party_request()

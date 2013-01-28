@@ -298,7 +298,7 @@ class ActionsCommitPacket(SubPacket):
     - the list of actions performed by each player
     (each action being represented by a single bye unsigned integer)"""
     TYPE = 42
-    SIZE = 4 + NUM_PLAYERS
+    SIZE = 8 + NUM_PLAYERS
     
     def __init__(self, turn, actions):
         self.turn = turn
@@ -314,13 +314,14 @@ class ActionsCommitPacket(SubPacket):
         return "(turn: %s | actions: (%s))" % (str(self.turn), ", ".join(actions_str))
     
     def get_raw_data(self):
-        return struct.pack('<I' + 'B' * NUM_PLAYERS, self.turn, *self.actions)
+        return struct.pack('<II' + 'B' * NUM_PLAYERS, self.turn, NUM_PLAYERS, *self.actions)
         
     @classmethod
     def process_raw_data(cls, data):
-        items = struct.unpack('<I' + 'B' * NUM_PLAYERS, data)
+        items = struct.unpack('<II' + 'B' * NUM_PLAYERS, data)
         turn = items[0]
-        actions = items[1 : NUM_PLAYERS + 1]
+        assert items[1] == NUM_PLAYERS
+        actions = items[2:]
         return cls(turn, actions)
 
 class PacketMismatch(Exception): 
@@ -416,7 +417,6 @@ class GamePacket(object):
     @classmethod
     def _read_len(cls, sock):
         # the first byte of the packet should indicate its length
-        print "reading length of packet"
         len_encoded = socket_utils.recv(sock, 4)
         return struct.unpack("<I", len_encoded)[0]
     
