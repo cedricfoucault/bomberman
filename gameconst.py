@@ -1,3 +1,5 @@
+import enum
+
 NUM_PLAYERS = 4
 
 # BOARD_WIDTH = 170
@@ -9,3 +11,27 @@ BOARD_HEIGHT = 15
 # TILE_WIDTH = BOARD_HEIGHT / BLOCK_SIZE
 
 ROUND_INTERVAL = 50 # 50 ms
+
+BOMB_COUNTER_INIT = 12
+BOMB_RADIUS = 5
+
+
+Action = enum.enum("Action",
+    ERROR = 0,
+    DEATH = 1,
+    
+    DO_NOTHING = 16,
+    MOVE_RIGHT = 17,
+    MOVE_UP    = 18,
+    MOVE_LEFT  = 19,
+    MOVE_DOWN  = 20,
+    
+    POSE_BOMB  = 32
+)
+
+TileContent = enum.enum("TileContent",
+    FREE = 0,
+    SOFT_BLOCK = 1,
+    HARD_BLOCK = 2,
+    BOMB = 3
+)

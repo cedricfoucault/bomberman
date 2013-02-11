@@ -1,57 +1,128 @@
-import server
+from gameconst import *
+from direct.showbase.ShowBase import ShowBase
+from direct.showbase import DirectObject
+from direct.actor.Actor import Actor
+from direct.task import Task
+from panda3d.core import *
+from direct.gui.DirectGui import *
+from direct.task import Task
+
+import packets
 import socket
 import socket_utils
-import threading
 import select
 import sys
-import packets
-import time
-import random
-import threading
+import os
 
 # debug = True
 debug = False
 
-class ConnectionHandle(server.ShutdownMixIn):
-    """Base class for connection handles.
+class TaskShutdownMixIn(object):
+    """Mix-In class to execute a task to be called once each frame
+    until a shutdown request is emitted"""
+    
+    def __init__(self):
+        # Flag to tell if this task has been shutdown
+        self._is_shut_down = False
+            
+    def do_task(self, fun, time_interval=None, name='No Name'):
+        """Add to the task manager a task which calls fun().
+        If time_interval is given, the task will be done once each
+        time_interval seconds, otherwise it will be done once each frame."""
+        self._is_shut_down = False
+        if time_interval:
+            def fun_task(task):
+                fun()
+                return Task.again
+            self.task = taskMgr.doMethodLater(time_interval, fun_task, name)
+        else:
+            def fun_task(task):
+                fun()
+                return Task.cont
+            self.task = taskMgr.add(fun_task, name)
+    
+    def _do_on_shutdown(self):
+        """This function is called just before the process is shut-downed.
+        
+        May be overriden"""
+        pass
+        
+    def shutdown(self, silent=False):
+        """Stop the server from accepting new connections"""
+        # if the silent option is true, the process will be shut down
+        # without calling the usual _do_on_shutdown
+        taskMgr.remove(self.task)
+        self._is_shut_down = True
+        if not silent:
+            self._do_on_shutdown()
+    
+    def is_shut_down(self):
+        return self._is_shut_down
+
+class TaskConnectionHandle(TaskShutdownMixIn):
+    """Base class for connection handles, using Panda3D tasks.
     A connection handle is an object that identifies a client-server connection,
     other processes will use this object as an interface."""
-    # tells whether the connection should be shut down when the main thread is done
-    daemon_threads = False
-    # time interval between checks to a shutdown request (in secs)
-    poll_interval = 0.5
+    # time interval between poll checks (in s)
+    # if this is 0, the poll checks will be done once every frame
+    poll_interval = 0
     # the packet received from this connection should be read as instances of this class
     packet_class = packets.GamePacket
     
     def __init__(self, conn, addr, start=True, no_init=False):
-        super(ConnectionHandle, self).__init__()
+        super(TaskConnectionHandle, self).__init__()
         if not no_init:
             self.conn        = conn # the socket for the connection
             self.addr        = addr # the socket's destination address
-            self.thread      = threading.Thread( # the receiver thread
-                target=self._process_connection,
-                  args=()
-            )
-            self.thread.daemon = self.__class__.daemon_threads
-            # a lock preventing two threads from sending at the same time
-            self._write_lock  = threading.Lock()
+            self.packet_to_send = None # a "buffer" where the packet to send
+                                       # will be put
             if start:
                 self.start_handling()
 
     def start_handling(self):
-        """Start processing the connection"""
+        """Start processing (polling) the connection"""
         if debug: print "handling " + str(self.addr)
-        self.thread.start()
-        
-    def _process_connection(self, poll_interval=poll_interval):
-        """Function to be run in a new thread while the connection is active"""
-        self.do_while_not_shut_down(iter_fun=self._process_connection_iter)
-        
-    def _process_connection_iter(self):
-        """Processing done in one iteration of the processing loop"""
-        # wait to receive a new packet
-        ready_to_read = select.select([self.conn], [], [], self.__class__.poll_interval)[0]
+        self.do_task(self._poll, self.poll_interval)
+    
+    def _poll(self):
+        """Poll this connection non-blockingly.
+        Check if there are data to read from the connection
+        and, if there are data to send, attempt to send them."""
+        # read poll
+        self._poll_read()
+        # write poll
+        if self.packet_to_send:
+            was_sent = self._poll_write(self.packet_to_send)
+            if was_sent: self.packet_to_send = None
+    
+    def _poll_write(self, packet):
+        """Check if data can be sent through the connected socket, and if yes,
+        send whatever is to be sent.
+        Returns True if data has been sent, False otherwise."""
+        # check if data can be sent
+        ready_to_write = select.select([], [self.conn], [], 0)[1]
+        if self.conn in ready_to_write:
+            try:
+                # try to send the packet
+                packet.send(self.conn)
+                if debug: print "Sent " + str(packet) + " to " + str(self.addr)
+                return True
+            except socket.error, e:
+                # if the connection was closed on the client side,
+                # shut down the process
+                if debug: print >> sys.stderr, str(e)
+                self.shutdown()
+                return False
+        else:
+            return False
+    
+    def _poll_read(self):
+        """Check if there are some data to read from the connection, and if yes,
+        read it."""
+        # check there are some data to read
+        ready_to_read = select.select([self.conn], [], [], 0)[0]
         if self.conn in ready_to_read:
+            # read it
             try:
                 # try to read the packet
                 packet = self.__class__.packet_class.recv(self.conn)
@@ -62,7 +133,7 @@ class ConnectionHandle(server.ShutdownMixIn):
                 # if the connection was closed on the client side,
                 # shut down the process
                 if debug: print >> sys.stderr, str(e)
-                self.shutdown(non_blocking=True)
+                self.shutdown()
             except packets.PacketMismatch, e:
                 if debug: print >> sys.stderr, str(e)
 
@@ -81,26 +152,18 @@ class ConnectionHandle(server.ShutdownMixIn):
         socket_utils.shutdown_close(self.conn)
     
     def send(self, packet):
-        """Send a packet to the other end of the connection"""
-        self._write_lock.acquire()
-        # ------ enter critical section ------
-        # send the packet through the connected socket
-        try:
-            packet.send(self.conn)
-            if debug: print "Sent " + str(packet) + " to " + str(self.addr)
-        except socket.error, e:
-            if debug: print >> sys.stderr, str(e)
-            self.shutdown(non_blocking=True)
-        # ------ exit critical section -------
-        self._write_lock.release()
+        """Send a packet to the other end of the connection.
+        This function actually just poses a request to send the given packet,
+        it will be send on the next write poll if the socket is available.
+        It overrides any previous send request which has not been processed."""
+        self.packet_to_send = packet
 
-class LobbyClientConnectionHandle(ConnectionHandle):
+class LobbyClientConnectionHandle(TaskConnectionHandle):
     """Class for client to lobby connections."""
 
-    def __init__(self, conn, addr, client, start=True, no_init=False):
-        super(LobbyClientConnectionHandle, self).__init__(conn, addr, start, no_init)
-        if not no_init:
-            self.client = client # a reference to the client owning the connection
+    def __init__(self, conn, addr, client, start=True):
+        super(LobbyClientConnectionHandle, self).__init__(conn, addr, start)
+        self.client = client # a reference to the client owning the connection
 
     def _process_packet(self, packet):
         """Get the current parties with their status from the received packet.
@@ -111,254 +174,115 @@ class LobbyClientConnectionHandle(ConnectionHandle):
 
     def _do_on_shutdown(self):
         """On shutdown, notice the client."""
-        self.client.notice_connection_shutdown(self)
         super(LobbyClientConnectionHandle, self)._do_on_shutdown()
-
-class PendingPartyClientConnectionHandle(ConnectionHandle):
-    """Class for client to pending party connections."""
-    
-    def __init__(self, conn, addr, client, start=True, no_init=False):
-        super(PendingPartyClientConnectionHandle, self).__init__(conn, addr, start, no_init)
-        if not no_init:
-            self.client = client # a reference to the client owning the connection
-    
-    def _process_packet(self, packet):
-        if self.client.is_ingame:
-            self._process_ingame_packet(packet)
-        else:
-            self._process_pending_packet(packet)
-        # if packet.type == packets.PacketType.PARTY_STATUS:
-        #             party_status = packets.PartyStatusPacket.process_raw_data(packet.payload)
-        #             self.client.update_party_status(party_status)
-        #         elif packet.type == packets.PacketType.INIT:
-        #             init_packet = packets.InitPacket.process_raw_data(packet.payload)
-        #             self.client.start_game(init_packet)
-    
-    def _process_pending_packet(self, packet):
-        """Get either the party status or the game initialization
-        from the received packet.
-        Update the client's observed party status accordingly or
-        tell the client to start the game."""
-        if packet.type == packets.PacketType.PARTY_STATUS:
-            party_status = packets.PartyStatusPacket.process_raw_data(packet.payload)
-            self.client.update_party_status(party_status)
-        elif packet.type == packets.PacketType.INIT:
-            init_packet = packets.InitPacket.process_raw_data(packet.payload)
-            self.client.start_game(init_packet)
-    
-    def _process_ingame_packet(self, packet):
-        """Get the actions and the turn number from the received packet and
-        ask the client to commit them."""
-        if packet.type == packets.PacketType.ACTION:
-            actions_packet = packets.ActionsCommitPacket.process_raw_data(packet.payload)
-            self.client.commit_actions(actions_packet.turn, actions_packet.actions)
-    
-    def _do_on_shutdown(self):
-        """On shutdown, notice the client."""
         self.client.notice_connection_shutdown(self)
-        super(PendingPartyClientConnectionHandle, self)._do_on_shutdown()
 
-class LobbyClient(server.ShutdownMixIn):
+class LobbyClient(object, ShowBase):
     """Class for the lobby client."""
     # use IPv4 adresses
     address_family = socket.AF_INET
     # use TCP sockets
     socket_type = socket.SOCK_STREAM
-    # time interval to print current pendingparties
-    PRINT_INTERVAL = 3
     
-    def __init__(self):
+    def __init__(self, partyfile):
+        ShowBase.__init__(self)
         super(LobbyClient, self).__init__()
-        # the current pending parties (fetched from the lobby server)
-        self._parties = []
-        # a read/write lock to this resource
-        self._parties_lock = threading.Lock()
+        # the connection handle to the server
         self.conn = None
+        # the list of buttons for the current pending parties
+        # (fetched from the lobby server)
+        self.buttons = []
+        self.key_handler = LobbyKeyHandler(self)
+        self.partyfile = partyfile
+        base.setBackgroundColor(0.0, 0.0, 0.0)
     
     def connect(self, addr):
         """Connect the client with the server located at the given address."""
         sock = socket.socket(self.address_family, self.socket_type)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         sock.connect(addr)
         if debug: print "Connected to " + str(addr)
         self.conn = LobbyClientConnectionHandle(sock, addr, self)
     
     def notice_connection_shutdown(self, handle):
-        print "The connection to " + str(handle.addr) + " was shut down\nQuitting..."
-        self.shutdown(non_blocking=True)
-    
-    # def reconnect(self, server_address, server_port):
-    #         socket_utils.shutdown_close(self.socket)
-    #         self.socket = socket.socket(self.address_family, self.socket_type)
-    #         self.socket.connect((server_address, server_port))
+        if debug: print "The connection to " + str(handle.addr) + " was shut down\nQuitting..."
+        self.quit()
     
     def send_create_party_request(self):
         """Send a create party request to the server."""
         createparty_packet = packets.CreatePartyPacket().wrap()
         self.conn.send(createparty_packet)
-    
-    # def recv_server_packet(self):
-    #     packet = packets.GamePacket.recv(self.socket)
-    #     self._process_server_packet(packet)
-    #     return packet
-    # 
-    # def _process_server_packet(self, packet):
-    #     if packet.type == packets.LobbyPacket.TYPE:
-    #         packet = packets.LobbyPacket.process_raw_data(packet.payload)
-    #         return packet
-    
-    def get_parties(self):
-        self._parties_lock.acquire()
-        # ------ enter critical section ------
-        parties = list(self._parties)
-        # ------ exit critical section -------
-        self._parties_lock.release()
-        return parties
-    
+        
+    def create_button(self, label, action, args, y_top):
+        y_text = y_top - 0.06
+        b = DirectButton(text=label,
+            command=action,
+            extraArgs=args,
+            text_pos=(0, y_text, 0),
+            text_fg=(0, 0, 0, 1.0),
+            text_scale=0.05,
+            frameSize=(-0.4, 0.4, y_top - 0.1, y_top),
+            textMayChange=1)
+        self.buttons.append(b)
+        
     def update_parties(self, parties):
-        self._parties_lock.acquire()
-        # ------ enter critical section ------
-        self._parties = parties
-        # ------ exit critical section -------
-        self._parties_lock.release()
+        """Update, add, remove the appropriate party buttons"""
+        # update or add the party buttons
+        for i, p in enumerate(parties):
+            label = "party %d: %d/%d" % (p.id, p.n_players, p.max_players)
+            action = self.connect_to_party
+            args = ((p.ip, p.port), )
+            if i < len(self.buttons):
+                self.buttons[i]['text'] = label
+                self.buttons[i]['command'] = action
+                self.buttons[i]['extraArgs'] = args
+            else:
+                y_top = 0.9 - i * 0.15
+                self.create_button(label, action, args, y_top)
+        # remove the out-of-range party buttons
+        for i in xrange(len(parties), len(self.buttons)):
+            self.buttons[i].destroy()
+        self.buttons = self.buttons[:len(parties)]
     
-    def print_parties_periodically(self):
-        self.do_while_not_shut_down(
-            iter_fun=self.print_parties,
-            args=(self.PRINT_INTERVAL, )
-        )
+    def connect_to_party(self, addr):
+        ip, port = addr
+        self.partyfile.write("%s\n" % ip)
+        self.partyfile.write("%d\n" % port)
+        if debug: print "quitting lobby client"
+        self.quit()
     
-    def print_parties(self, sleeptime):
-        print self.get_parties()
-        time.sleep(sleeptime)
-    
-    def _do_on_shutdown(self):
-        if self.conn: self.conn.shutdown()
-    
-
-class PartyClient(server.ShutdownMixIn):
-    """Class for the party client."""
-    # use IPv4 adresses
-    address_family = socket.AF_INET
-    # use TCP sockets
-    socket_type = socket.SOCK_STREAM
-    # time interval to print current pendingparties
-    PRINT_INTERVAL = 3
-    
-    def __init__(self):
-        super(PartyClient, self).__init__()
-        # the status of the party this client joined
-        self._party_status = []
-        # a read/write lock to this resource
-        self._party_status_lock = threading.Lock()
-        # boolean flag to switch to ingame
-        self.is_ingame = False
-        self.conn = None
-    
-    def connect(self, addr):
-        """Connect the client with the server located at the given address."""
-        sock = socket.socket(self.address_family, self.socket_type)
-        sock.connect(addr)
-        if debug: print "Connected to " + str(addr)
-        self.conn = PendingPartyClientConnectionHandle(sock, addr, self)
-    
-    def start_game(self, init_packet):
-        self.is_ingame = True
-    
-    def notice_connection_shutdown(self, handle):
-        print "The connection to " + str(handle.addr) + " was shut down\nQuitting..."
-        self.shutdown(non_blocking=True)
-    
-    def get_party_status(self):
-        self._party_status_lock.acquire()
-        # ------ enter critical section ------
-        party_status = self._party_status
-        # ------ exit critical section -------
-        self._party_status_lock.release()
-        return party_status
-    
-    def update_party_status(self, status):
-        self._party_status_lock.acquire()
-        # ------ enter critical section ------
-        self._party_status = status
-        # ------ exit critical section -------
-        self._party_status_lock.release()
-    
-    def print_party_status_periodically(self):
-        self.do_while_not_shut_down(
-            iter_fun=self.client_loop,
-            args=(self.PRINT_INTERVAL, )
-        )
-    
-    def client_loop(self, sleeptime):
-        if self.is_ingame:
-            pass
-        else:
-            self.print_party_status()
-        time.sleep(sleeptime)
-    
-    def print_party_status(self):
-        print self.get_party_status()
-    
-    def print_turn(self):
-        print self.turn
-    
-    def _do_on_shutdown(self):
-        if self.conn: self.conn.shutdown()
-    
-    def commit_actions(self, turn, actions):
-        self.turn = turn
+    def quit(self):
+        self.shutdown()
+        self.userExit()
     
 
-def main():
-    """Main client process"""
-    PORT = 42042 # arbitrary port number to connect on for the chat
-    LOCALHOST = '127.0.0.1' # ip adress of localhost
-    # ip = LOCALHOST
-    ip = '192.168.1.2'
-    client = LobbyClient()
-    client.connect((ip, PORT))
-    print_thread = threading.Thread(
-        target=client.print_parties_periodically
-    )
-    print_thread.start()
-    # time.sleep(4)
-    client.send_create_party_request()
-    time.sleep(4)
-    # client.send_create_party_request()
-    # time.sleep(4)
+class LobbyKeyHandler(DirectObject.DirectObject):
+    def __init__(self, master):
+        # keep reference to the game controller and "me" player
+        self.master = master
+        # init the handler send the actions corresponding to the key pressed
+        self.accept('c', self.create_party)
     
-    party = client.get_parties()[0]
-    client.shutdown()
+    def create_party(self):
+        self.master.send_create_party_request()
     
-    if debug: print "connect to party"
-    party_client = PartyClient()
-    party_client.connect((party.ip, party.port))
-    party_client.print_party_status_periodically()
-    
-    # createparty_packet = packets.CreatePartyPacket().wrap()
-    # while True:
-    #         # spacket = packets.RequestPacket.random()
-    #         client.send_server(createparty_packet)
-    #         print "Sent: " + str(createparty_packet)
-    #         # rpacket = packets.RequestPacket.recv(client.socket)
-    #         lobbypacket = client.recv_server_packet()
-    #         print "Received: " + str(lobbypacket)
-    #         time.sleep(random.randint(1, 5) / 10)
-    # client.send_server(createparty_packet)
-    # print "Sent: " + str(createparty_packet)
-    # time.sleep(2)
-    # packet = client.recv_server_packet()
-    # print "Received: " + str(packet)
-    # assert packet.type == packets.LobbyPacket.TYPE
-    # lobbypacket = packets.LobbyPacket.process_raw_data(packet.payload)
-    # assert lobbypacket.n_parties > 0
-    # partyinfo = lobbypacket.parties[0]
-    # print "connect to (%s, %d)" % (partyinfo.ip, partyinfo.port)
-    # client.reconnect(partyinfo.ip, partyinfo.port)
-    # print "wait for packet"
-    # packet = client.recv_server_packet()
-    # print "Received: " + str(packet)
+    def destroy(self):
+        """Get rid of this handler"""
+        self.ignoreAll()
+        
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) != 4:
+        print "Usage: lobbyclient server_ip server_port party_fd"
+        sys.exit(-1)
+    # the server ip and port to connect on
+    ip = sys.argv[1]
+    port = int(sys.argv[2])
+    # we will write the party server address to connect on in this file
+    # this file will be read by the parent process
+    party_file = os.fdopen(int(sys.argv[3]), 'w')
+    # instance the lobby client with the given file
+    lobbyclient = LobbyClient(party_file)
+    lobbyclient.connect((ip, port))
+    lobbyclient.run()
 

@@ -24,60 +24,6 @@ PacketType = enum.enum("PacketType",
     ACTION = 42
 )
 
-Action = enum.enum("Action",
-    ERROR = 0,
-    DEATH = 1,
-    
-    DO_NOTHING = 16,
-    MOVE_RIGHT = 17,
-    MOVE_UP    = 18,
-    MOVE_LEFT  = 19,
-    MOVE_DOWN  = 20,
-    
-    POSE_BOMB  = 32
-)
-
-TileContent = enum.enum("TileContent",
-    FREE = 0,
-    SOFT_BLOCK = 1,
-    HARD_BLOCK = 2,
-    BOMB = 3
-)
-
-# class Action:
-#     ERROR = 0
-#     DEATH = 1
-#     
-#     DO_NOTHING = 16
-#     MOVE_RIGHT = 17
-#     MOVE_UP    = 18
-#     MOVE_LEFT  = 19
-#     MOVE_DOWN  = 20
-#     
-#     POSE_BOMB  = 32
-#     
-#     @classmethod
-#     def to_str(cls, action):
-#         return cls.str_values[action]
-#         # the str_values dict is created just after the class declaration
-#         # and defined below
-# 
-# # str_values is a dictionary that matches an action with its string representation
-# # (e.g. str_values[32] == "pose bomb")
-# Action.str_values = dict( (value, name.lower().replace('_', ' '))
-#     for name, value in get_user_attributes(Action)
-# )
-# 
-# class PacketType:
-#     ACTION = 42
-#     
-#     @classmethod
-#     def to_str(cls, action):
-#         return cls.str_values[action]
-#         
-# PacketType.str_values = dict( (value, name.lower().replace('_', ' '))
-#     for name, value in get_user_attributes(PacketType)
-# )
 
 class PartyInfo(object):
     """Represents a pending party, waiting for players"""
@@ -121,7 +67,6 @@ class SubPacket(object):
     def wrap(self):
         return GamePacket(self.TYPE, self.get_raw_data())
         
-    
 
 class LobbyPacket(SubPacket):
     """A lobby packet is composed of:
@@ -207,7 +152,7 @@ class InitPacket(SubPacket):
     """The server hosting the party send an init packet to each player
     which marks the start of the game. It contains all the necessary
     information to initialize the game state:
-    - a 4-byte integer to let the receiver know its player ID
+    - a 4-byte integer to let the receiver know its player no
     - a 4-byte integer for the total number of players k
     - a 4-byte integer which tells the length of each turn (in ms)
     - a 4-byte integer for the width n of the map
@@ -297,11 +242,12 @@ class ActionsCommitPacket(SubPacket):
     (a 4-byte unsigned integer, little endian)
     - the list of actions performed by each player
     (each action being represented by a single bye unsigned integer)"""
-    TYPE = 42
-    SIZE = 8 + NUM_PLAYERS
+    TYPE = PacketType.ACTION
+    # SIZE = 8 + NUM_PLAYERS
     
     def __init__(self, turn, actions):
         self.turn = turn
+        self.num_players = len(actions)
         self.actions = actions
     
     def __repr__(self):
@@ -314,14 +260,15 @@ class ActionsCommitPacket(SubPacket):
         return "(turn: %s | actions: (%s))" % (str(self.turn), ", ".join(actions_str))
     
     def get_raw_data(self):
-        return struct.pack('<II' + 'B' * NUM_PLAYERS, self.turn, NUM_PLAYERS, *self.actions)
+        return struct.pack('<II' + 'B' * self.num_players, self.turn, self.num_players, *self.actions)
         
     @classmethod
     def process_raw_data(cls, data):
-        items = struct.unpack('<II' + 'B' * NUM_PLAYERS, data)
+        # items = struct.unpack('<II' + 'B' * NUM_PLAYERS, data)
+        items = struct.unpack('<II', data[:8])
         turn = items[0]
-        assert items[1] == NUM_PLAYERS
-        actions = items[2:]
+        num_players = items[1]
+        actions = struct.unpack('B' * num_players, data[8:])
         return cls(turn, actions)
 
 class PacketMismatch(Exception): 
@@ -357,7 +304,7 @@ class GamePacket(object):
             processed_payload = PayloadClass.process_raw_data(self.payload)
             return "(type: %s | payload: %s)" % (PacketType.to_str(self.type), str(processed_payload))
         else:
-            return "(type: %d | payload: junk)" % (self.type)
+            return "(type: %d | payload: junk or action)" % (self.type)
         # return "(type: %s | payload: %s)" % (PacketType.to_str(self.type), str(self.payload))
     
     @classmethod

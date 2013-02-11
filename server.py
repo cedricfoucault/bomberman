@@ -9,7 +9,8 @@ import sys
 import threading
 import time
 
-debug = True
+# debug = True
+debug = False
 
 class ShutdownMixIn(object):
     """Mix-In class to execute a task forever until a shutdown request is emitted"""
@@ -222,7 +223,10 @@ class Server(ShutdownMixIn):
             self.address = address
             # the server's listener socket
             self.socket = socket.socket(self.address_family, self.socket_type)
+            # "free" the socket as soon as it is closed
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # disable Naggle
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             # a maintained list of active connections
             self._active_connections = []
             # a lock used to access safely the active connections list
@@ -446,9 +450,10 @@ class LobbyServer(Server):
         self._parties_lock.acquire()
         # ------ enter critical section ------
         # remove the given party server from the list of pending parties
-        self._parties = self._parties.remove(party)
-        if not self._parties:
-            self._parties = []
+        self._parties = [p for p in self._parties if p != party]
+        # self._parties = self._parties.remove(party)
+        #         if not self._parties:
+        #             self._parties = []
         # ------ exit critical section -------
         self._parties_lock.release()
     
@@ -689,6 +694,7 @@ class PartyServer(Server):
     status of the party periodically to all players in the room."""
     ConnectionHandle = PartyConnectionHandle
     SEND_INTERVAL = 0.2
+    # SEND_INTERVAL = 0.4
     # ID count
     next_id = 0
     
@@ -740,11 +746,18 @@ class PartyServer(Server):
         """This function is called when a connection about to be shut-down."""
         super(PartyServer, self).notice_connection_shutdown(handle)
         self.n_players -= 1
+        # shut down the party server if it is ingame and there is no player left
+        if self.n_players == 0 and self.is_ingame:
+            self.shutdown()
     
     def send_loop(self):
         while True:
             if self.is_ingame:
-                self.send_actions()
+                if self.n_players != 0:
+                    self.current_turn += 1
+                    self.send_actions()
+                else: # stop the loop if there is no player left
+                    break
             else:
                 self.send_status()
             time.sleep(self.__class__.SEND_INTERVAL)
@@ -766,10 +779,9 @@ class PartyServer(Server):
         for i, c in enumerate(clients[:NUM_PLAYERS]):
             actions[i] = record[c]
 
-        turn = 0
         # create a packet to commit these actions
-        commit_packet = packets.ActionsCommitPacket(turn, actions)
-        print commit_packet
+        commit_packet = packets.ActionsCommitPacket(self.current_turn, actions)
+        if debug: print commit_packet
         # response = packets.ResponsePacket(packets.ActionsCommitPacket.TYPE,
         #                                             commit_packet.get_raw_data())
         response = commit_packet.wrap()
@@ -781,16 +793,16 @@ class PartyServer(Server):
         sending an init packet to all players and becomes an (ingame) party
         server."""
         # send the init packet to all clients
-        pID = 0
         k = self.max_players
         dturn = self.SEND_INTERVAL * 1000 # (in ms)
         n = BOARD_WIDTH
         m = BOARD_HEIGHT
-        game_map = mapgen.generate(n, m)
-        tiles = game_map.get_tiles()
+        # game_map = mapgen.generate(n, m)
+        # tiles = game_map.get_tiles()
+        tiles = mapgen.generate(n, m)
         poss = [(0, 0), (n - 1, 0), (0, m - 1), (n - 1, m - 1)]
+        pID = 0
         for handle in self.get_active_connections():
-            tiles = game_map.get_tiles()
             packet = packets.InitPacket(pID, k, dturn, n, m, tiles, poss).wrap()
             handle.send_client(packet)
             pID += 1
@@ -803,6 +815,7 @@ class PartyServer(Server):
         self.start_ingame()
     
     def start_ingame(self):
+        self.current_turn = 0
         self.is_ingame = True
         # stop accepting new connections
         self.shutdown(silent=True)
@@ -812,20 +825,22 @@ class PartyServer(Server):
         # process the received packet to retrieve the requested action
         if (packet.type == packets.ActionRequestPacket.TYPE):
             action_packet = packets.ActionRequestPacket.process_raw_data(packet.payload)
-        action = action_packet.action
-        # save the action
-        self._action_record_lock.acquire()
-        # ------ enter critical section ------
-        # if there's no action already committed for this client,
-        # comit this action
-        # print self._action_record
-        #         if (self._action_record.get(client, default=packets.Action.DO_NOTHING)) == packets.Action.DO_NOTHING:
-        #             self._action_record = action
-        if self._action_record[client] == packets.Action.DO_NOTHING:
-            self._action_record[client] = action
-        # else, ignore the packet
-        # ------ exit critical section -------
-        self._action_record_lock.release()
+        # process the packet if it is not outdated (given turn is the current turn)
+        if self.current_turn == action_packet.turn:
+            action = action_packet.action
+            # save the action
+            self._action_record_lock.acquire()
+            # ------ enter critical section ------
+            # if there's no action already committed for this client,
+            # comit this action
+            # print self._action_record
+            #         if (self._action_record.get(client, default=packets.Action.DO_NOTHING)) == packets.Action.DO_NOTHING:
+            #             self._action_record = action
+            if self._action_record[client] == packets.Action.DO_NOTHING:
+                self._action_record[client] = action
+            # else, ignore the packet
+            # ------ exit critical section -------
+            self._action_record_lock.release()
     
     def get_action_record(self):
         """Get the current packet record"""
