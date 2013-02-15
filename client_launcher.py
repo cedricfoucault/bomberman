@@ -7,7 +7,9 @@ debug = True
 if __name__ == "__main__":
     LOBBY_PORT = 42042 # the server's port number
     LOCALHOST = '127.0.0.1' # ip adress of localhost
-    LOBBY_IP = LOCALHOST
+    # LOBBY_IP = LOCALHOST
+    # LOBBY_IP = '192.168.1.2'
+    LOBBY_IP = sys.argv[1]
     # open a temporary file for the lobby client to write the party server address
     partyfile = os.tmpfile()
     party_fd = partyfile.fileno()

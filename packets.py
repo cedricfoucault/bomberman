@@ -8,11 +8,6 @@ from gameconst import *
 
 UINT32_MAX = pow(2, 32) - 1
 
-def get_user_attributes(cls):
-    boring = dir(type('dummy', (object,), {}))
-    return [item
-            for item in inspect.getmembers(cls)
-            if item[0] not in boring and not callable(getattr(cls, item[0]))]
 
 PacketType = enum.enum("PacketType",
     LOBBY = 1,
@@ -303,8 +298,15 @@ class GamePacket(object):
             PayloadClass = self.__class__.payload_classes[self.type]
             processed_payload = PayloadClass.process_raw_data(self.payload)
             return "(type: %s | payload: %s)" % (PacketType.to_str(self.type), str(processed_payload))
+        elif self.type == PacketType.ACTION:
+            processed_payload = \
+                ActionRequestPacket.process_raw_data(self.payload) \
+                if len(self.payload) == ActionRequestPacket.SIZE \
+                else ActionsCommitPacket.process_raw_data(self.payload)
+            return "(type: %s | payload: %s)" % (PacketType.to_str(self.type), str(processed_payload))
+                
         else:
-            return "(type: %d | payload: junk or action)" % (self.type)
+            return "(type: %d | payload: junk)" % (self.type)
         # return "(type: %s | payload: %s)" % (PacketType.to_str(self.type), str(self.payload))
     
     @classmethod
@@ -376,17 +378,22 @@ class GamePacket(object):
         else:
             return struct.unpack("B", ptype_encoded)[0]
 
-# class RequestPacket(GamePacket):
-#     """A request packet is a game packet designed to be a client request
-#     to server"""
-#     payload_classes = {
-#         PacketType.ACTION: ActionRequestPacket
-#     }
-# 
-# class ResponsePacket(GamePacket):
-#     """A commit packet is a game packet designed to be a server response"""
-#     payload_classes = {
-#         PacketType.ACTION: ActionsCommitPacket
-#     }
+class ClientPacket(GamePacket):
+    """A request packet is a game packet designed to be a client request
+    to server"""
+    payload_classes = {
+        PacketType.LOBBY: LobbyPacket,
+        PacketType.CREATE_PARTY: CreatePartyPacket,
+    
+        PacketType.PARTY_STATUS: PartyStatusPacket,
+        PacketType.INIT: InitPacket,
+        PacketType.ACTION: ActionRequestPacket
+    }
+
+class ServerPacket(GamePacket):
+    """A commit packet is a game packet designed to be a server response"""
+    payload_classes = {
+        PacketType.ACTION: ActionsCommitPacket
+    }
 
         

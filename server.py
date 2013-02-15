@@ -9,8 +9,9 @@ import sys
 import threading
 import time
 
+debug = DEBUG
 # debug = True
-debug = False
+# debug = False
 
 class ShutdownMixIn(object):
     """Mix-In class to execute a task forever until a shutdown request is emitted"""
@@ -693,7 +694,7 @@ class PartyServer(Server):
     a new game can start. It waits until the room is full, sending the current
     status of the party periodically to all players in the room."""
     ConnectionHandle = PartyConnectionHandle
-    SEND_INTERVAL = 0.2
+    SEND_INTERVAL = TURN_LENGTH
     # SEND_INTERVAL = 0.4
     # ID count
     next_id = 0
@@ -712,7 +713,6 @@ class PartyServer(Server):
             self._action_record = {}
             # a lock to access and update this resource safely
             self._action_record_lock = threading.Lock()
-            self._flush_record()
         
     @classmethod
     def create_new(cls, lobby):
@@ -754,8 +754,8 @@ class PartyServer(Server):
         while True:
             if self.is_ingame:
                 if self.n_players != 0:
-                    self.current_turn += 1
                     self.send_actions()
+                    self.current_turn += 1
                 else: # stop the loop if there is no player left
                     break
             else:
@@ -802,11 +802,12 @@ class PartyServer(Server):
         tiles = mapgen.generate(n, m)
         poss = [(0, 0), (n - 1, 0), (0, m - 1), (n - 1, m - 1)]
         pID = 0
-        for handle in self.get_active_connections():
+        self.players = self.get_active_connections()
+        for handle in self.players:
             packet = packets.InitPacket(pID, k, dturn, n, m, tiles, poss).wrap()
             handle.send_client(packet)
             pID += 1
-            
+        
         # notice the server that this party is full and no longer accepts
         # new clients
         self.lobby.notice_party_shutdown(self)
@@ -815,10 +816,13 @@ class PartyServer(Server):
         self.start_ingame()
     
     def start_ingame(self):
-        self.current_turn = 0
+        # self.current_turn = 0
+        self.current_turn = 1
         self.is_ingame = True
         # stop accepting new connections
         self.shutdown(silent=True)
+        # flush the record
+        self._flush_record()
     
     def record_packet(self, packet, client):
         """Save a client action packet in the action record"""
@@ -826,21 +830,21 @@ class PartyServer(Server):
         if (packet.type == packets.ActionRequestPacket.TYPE):
             action_packet = packets.ActionRequestPacket.process_raw_data(packet.payload)
         # process the packet if it is not outdated (given turn is the current turn)
-        if self.current_turn == action_packet.turn:
-            action = action_packet.action
-            # save the action
-            self._action_record_lock.acquire()
-            # ------ enter critical section ------
-            # if there's no action already committed for this client,
-            # comit this action
-            # print self._action_record
-            #         if (self._action_record.get(client, default=packets.Action.DO_NOTHING)) == packets.Action.DO_NOTHING:
-            #             self._action_record = action
-            if self._action_record[client] == packets.Action.DO_NOTHING:
-                self._action_record[client] = action
-            # else, ignore the packet
-            # ------ exit critical section -------
-            self._action_record_lock.release()
+            if self.current_turn == action_packet.turn:
+                action = action_packet.action
+                # save the action
+                self._action_record_lock.acquire()
+                # ------ enter critical section ------
+                # if there's no action already committed for this client,
+                # comit this action
+                # print self._action_record
+                #         if (self._action_record.get(client, default=packets.Action.DO_NOTHING)) == packets.Action.DO_NOTHING:
+                #             self._action_record = action
+                if self._action_record[client] == packets.Action.DO_NOTHING:
+                    self._action_record[client] = action
+                # else, ignore the packet
+                # ------ exit critical section -------
+                self._action_record_lock.release()
     
     def get_action_record(self):
         """Get the current packet record"""
@@ -860,7 +864,8 @@ class PartyServer(Server):
         # ------ enter critical section ------
         self._action_record = {
             client: packets.Action.DO_NOTHING
-            for client in self.get_active_connections()
+            for client in self.players
+            # for client in self.get_active_connections()
         }
         # ------ exit critical section -------
         self._action_record_lock.release()

@@ -1,4 +1,5 @@
 from mixins import *
+from gameconst import *
 
 import packets
 import socket_utils
@@ -6,8 +7,8 @@ import select
 import socket
 import sys
 
-# debug = True
-debug = False
+debug = DEBUG
+# debug = False
 
 class TaskConnectionHandle(TaskShutdownMixIn):
     """Base class for connection handles, using Panda3D tasks.

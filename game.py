@@ -37,10 +37,10 @@ class GameController(ShowBase):
         # init the environment
         self.init_world_view()
         # build the initial map for the game
-        self.map = [[Tile(map_init[y * width + x], x, y)
+        self.map = [[Tile(map_init[y * width + x], x, y, height)
                     for x in xrange(width)] for y in xrange(height)]
         # the list of players
-        self.players = [Player(no, xi, yi, no == me) for no, (xi, yi) in enumerate(players)]
+        self.players = [Player(no, xi, yi, height, no == me) for no, (xi, yi) in enumerate(players)]
         # the turn number
         self.turn = 0
         # the no of the player who "I" am
@@ -162,7 +162,7 @@ class GameController(ShowBase):
     def execute_turn(self, turn_no, actions):
         """Starts a new turn with given turn no and player actions"""
         # update the turn no
-        self.turn = turn_no
+        self.turn = turn_no + 1
         # commit the player actions
         self.commit_actions(actions)
         # update the bombs
@@ -181,6 +181,14 @@ class GameController(ShowBase):
             self.declare_draw()
         
     
+    def declare_winner(self, p):
+        """Declare the given player winner"""
+        pass
+    
+    def declare_draw(self):
+        """Declare a draw (no winner)"""
+        pass
+    
     def commit_actions(self, actions):
         for i, a in enumerate(actions):
             if self.can_do(i, a):
@@ -196,7 +204,7 @@ class GameController(ShowBase):
             return False
         # can a bomb be placed on another one ?
         elif action == Action.POSE_BOMB:
-            return (player.has_bomb() and self.map[player.y][player.x].is_available())
+            return (player.has_bomb() and self.map[player.y][player.x].is_free())
         # collision between 2 players ?
         elif action == Action.MOVE_RIGHT:
             return (player.x < self.width - 1 and
@@ -240,17 +248,27 @@ class GameController(ShowBase):
         self.map[yb][xb].destroy()
         self.bombs = [(x, y, i) for (x, y, i) in self.bombs if (x != xb and y != yb)]
         # build the list of positions inside the explosion radius
-        inside_radius = []
-        inside_radius.extend([(xb + i, yb) for i in xrange(1, BOMB_RADIUS + 1)
-                                            if xb + i < self.width])
-        inside_radius.extend([(xb - i, yb) for i in xrange(1, BOMB_RADIUS + 1)
-                                            if xb - i >= 0])
-        inside_radius.extend([(xb, yb - i) for i in xrange(1, BOMB_RADIUS + 1)
-                                            if yb - i >= 0])
-        inside_radius.extend([(xb, yb + i) for i in xrange(1, BOMB_RADIUS + 1)
-                                            if yb + i < self.height])
-        # check every tile within the explosion radius
-        for (x, y) in inside_radius:
+        # inside_radius = []
+        # inside_radius.extend([(xb + i, yb) for i in xrange(1, BOMB_RADIUS + 1)
+        #                                     if xb + i < self.width])
+        # inside_radius.extend([(xb - i, yb) for i in xrange(1, BOMB_RADIUS + 1)
+        #                                     if xb - i >= 0])
+        # inside_radius.extend([(xb, yb - i) for i in xrange(1, BOMB_RADIUS + 1)
+        #                                     if yb - i >= 0])
+        # inside_radius.extend([(xb, yb + i) for i in xrange(1, BOMB_RADIUS + 1)
+        #                                     if yb + i < self.height])
+        # # check every tile within the explosion radius
+        # for (x, y) in inside_radius:
+        #     t = self.map[y][x]
+        #     # destroy any destructible block within the radius
+        #     if t.content == TileContent.SOFT_BLOCK:
+        #         t.destroy()
+        #     # add any bomb within the radius to a list of bombs to explode
+        #     elif t.content == TileContent.BOMB:
+        #         self.to_explode.append((x, y))
+        
+        # explosion to the right
+        for (x, y) in [(xb + i, yb) for i in xrange(1, BOMB_RADIUS + 1) if xb + i < self.width]:
             t = self.map[y][x]
             # destroy any destructible block within the radius
             if t.content == TileContent.SOFT_BLOCK:
@@ -258,6 +276,45 @@ class GameController(ShowBase):
             # add any bomb within the radius to a list of bombs to explode
             elif t.content == TileContent.BOMB:
                 self.to_explode.append((x, y))
+            # stop the explosion an indestructible block blocks it
+            elif t.content == TileContent.HARD_BLOCK:
+                break
+        # explosion to the left
+        for (x, y) in [(xb - i, yb) for i in xrange(1, BOMB_RADIUS + 1) if xb - i >= 0]:
+            t = self.map[y][x]
+            # destroy any destructible block within the radius
+            if t.content == TileContent.SOFT_BLOCK:
+                t.destroy()
+            # add any bomb within the radius to a list of bombs to explode
+            elif t.content == TileContent.BOMB:
+                self.to_explode.append((x, y))
+            # stop the explosion an indestructible block blocks it
+            elif t.content == TileContent.HARD_BLOCK:
+                break
+        # upward explosion
+        for (x, y) in [(xb, yb - i) for i in xrange(1, BOMB_RADIUS + 1) if yb - i >= 0]:
+            t = self.map[y][x]
+            # destroy any destructible block within the radius
+            if t.content == TileContent.SOFT_BLOCK:
+                t.destroy()
+            # add any bomb within the radius to a list of bombs to explode
+            elif t.content == TileContent.BOMB:
+                self.to_explode.append((x, y))
+            # stop the explosion an indestructible block blocks it
+            elif t.content == TileContent.HARD_BLOCK:
+                break
+        # downward explosion
+        for (x, y) in [(xb, yb + i) for i in xrange(1, BOMB_RADIUS + 1) if yb + i < self.height]:
+            t = self.map[y][x]
+            # destroy any destructible block within the radius
+            if t.content == TileContent.SOFT_BLOCK:
+                t.destroy()
+            # add any bomb within the radius to a list of bombs to explode
+            elif t.content == TileContent.BOMB:
+                self.to_explode.append((x, y))
+            # stop the explosion an indestructible block blocks it
+            elif t.content == TileContent.HARD_BLOCK:
+                break
         # kill any player within the explosion radius
         for p in self.alive_players():
             if p.x == xb and yb - BOMB_RADIUS <= p.y and p.y <= yb + BOMB_RADIUS:
@@ -306,13 +363,14 @@ class Player(object):
         }
     }
     
-    def __init__(self, no, xi, yi, me=False):
+    def __init__(self, no, xi, yi, height, me=False):
         super(Player, self).__init__()
         # player number
         self.no = no
         # initial position
         self.x = xi
         self.y = yi
+        self.height = height
         # boolean flag, False if the player is dead
         self.alive = True
         # the last interval action will be stored there
@@ -327,7 +385,7 @@ class Player(object):
             self.view.setColor(r,g,b,a)
         if 'scale' in params:
             self.view.setScale(params['scale'])
-        self.view.setPos(xi, yi, 0.5)
+        self.view.setPos(xi, height - yi - 1, 0.5)
         self.view.reparentTo(render)
         # if the player is "Me", put the me marker to show him
         if me:
@@ -350,7 +408,7 @@ class Player(object):
         elif action == Action.MOVE_DOWN:
             self.y += 1
         if self.last_action: self.last_action.finish()
-        self.last_action = self.view.posInterval(time / 1000.0, Point3(self.x, self.y, 0.5))
+        self.last_action = self.view.posInterval(time / 1000.0, Point3(self.x, self.height - self.y - 1, 0.5))
         self.last_action.start()
         # self.view.posInterval(time / 1000, Point3(self.x, self.y, 0)).start()
     
@@ -395,17 +453,18 @@ class Tile(object):
         }
     }
     
-    def __init__(self, content, x, y):
+    def __init__(self, content, x, y, height):
         super(Tile, self).__init__()
         # the tile's content
         self.content = content
         # the tile's position
         self.x = x
         self.y = y
+        self.height = height
         # load the corresponding view and place it in the correct position
         if not content == TileContent.FREE:
             self.view = self.load_view(content)
-            self.view.setPos(x, y, 0.5)
+            self.view.setPos(x, height - y - 1, 0.5)
             self.view.reparentTo(render)
         else:
             self.view = None
@@ -426,13 +485,17 @@ class Tile(object):
     def is_available(self):
         """Return True if this tile can be crossed by a player."""
         return (self.content == TileContent.FREE or self.content == TileContent.BOMB)
+        
+    def is_free(self):
+        """Return True a player can pose a bomb on this tile."""
+        return (self.content == TileContent.FREE)
     
     def put_bomb(self):
         """Put a new bomb on this Tile"""
         if self.view: self.view.removeNode()
         self.content = TileContent.BOMB
         self.view = self.load_view(self.content)
-        self.view.setPos(self.x, self.y, 0)
+        self.view.setPos(self.x, self.height - self.y - 1, 0)
         self.view.reparentTo(render)
     
     def destroy(self):

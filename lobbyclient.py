@@ -14,8 +14,8 @@ import select
 import sys
 import os
 
-# debug = True
-debug = False
+debug = DEBUG
+# debug = False
 
 class TaskShutdownMixIn(object):
     """Mix-In class to execute a task to be called once each frame

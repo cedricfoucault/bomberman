@@ -16,8 +16,9 @@ import socket_utils
 import select
 import sys
 
+debug = DEBUG
 # debug = True
-debug = False
+# debug = False
 
 class PartyClientConnectionHandle(TaskConnectionHandle):
     """Class for client to party-server connections."""
