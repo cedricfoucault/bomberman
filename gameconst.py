@@ -18,6 +18,9 @@ BOMB_RADIUS = 3
 
 DEBUG = False
 
+# DUMP_OLD_PACKET = False
+DUMP_OLD_PACKET = True
+
 
 Action = enum.enum("Action",
     ERROR = 0,

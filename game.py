@@ -267,60 +267,74 @@ class GameController(ShowBase):
         #     elif t.content == TileContent.BOMB:
         #         self.to_explode.append((x, y))
         
+        # kill any player on the tile where the bomb explodes
+        for p in self.alive_players():
+            if p.x == xb and p.y == yb:
+                self.kill(p)
         # explosion to the right
         for (x, y) in [(xb + i, yb) for i in xrange(1, BOMB_RADIUS + 1) if xb + i < self.width]:
             t = self.map[y][x]
+            # kill any player within the explosion radius
+            for p in self.alive_players():
+                if p.x == x and p.y == y:
+                    self.kill(p)
             # destroy any destructible block within the radius
             if t.content == TileContent.SOFT_BLOCK:
                 t.destroy()
             # add any bomb within the radius to a list of bombs to explode
             elif t.content == TileContent.BOMB:
                 self.to_explode.append((x, y))
-            # stop the explosion an indestructible block blocks it
+            # stop the explosion if an indestructible block blocks it
             elif t.content == TileContent.HARD_BLOCK:
                 break
         # explosion to the left
         for (x, y) in [(xb - i, yb) for i in xrange(1, BOMB_RADIUS + 1) if xb - i >= 0]:
             t = self.map[y][x]
+            # kill any player within the explosion radius
+            for p in self.alive_players():
+                if p.x == x and p.y == y:
+                    self.kill(p)
             # destroy any destructible block within the radius
             if t.content == TileContent.SOFT_BLOCK:
                 t.destroy()
             # add any bomb within the radius to a list of bombs to explode
             elif t.content == TileContent.BOMB:
                 self.to_explode.append((x, y))
-            # stop the explosion an indestructible block blocks it
+            # stop the explosion if an indestructible block blocks it
             elif t.content == TileContent.HARD_BLOCK:
                 break
         # upward explosion
         for (x, y) in [(xb, yb - i) for i in xrange(1, BOMB_RADIUS + 1) if yb - i >= 0]:
             t = self.map[y][x]
+            # kill any player within the explosion radius
+            for p in self.alive_players():
+                if p.x == x and p.y == y:
+                    self.kill(p)
             # destroy any destructible block within the radius
             if t.content == TileContent.SOFT_BLOCK:
                 t.destroy()
             # add any bomb within the radius to a list of bombs to explode
             elif t.content == TileContent.BOMB:
                 self.to_explode.append((x, y))
-            # stop the explosion an indestructible block blocks it
+            # stop the explosion if an indestructible block blocks it
             elif t.content == TileContent.HARD_BLOCK:
                 break
         # downward explosion
         for (x, y) in [(xb, yb + i) for i in xrange(1, BOMB_RADIUS + 1) if yb + i < self.height]:
             t = self.map[y][x]
+            # kill any player within the explosion radius
+            for p in self.alive_players():
+                if p.x == x and p.y == y:
+                    self.kill(p)
             # destroy any destructible block within the radius
             if t.content == TileContent.SOFT_BLOCK:
                 t.destroy()
             # add any bomb within the radius to a list of bombs to explode
             elif t.content == TileContent.BOMB:
                 self.to_explode.append((x, y))
-            # stop the explosion an indestructible block blocks it
+            # stop the explosion if an indestructible block blocks it
             elif t.content == TileContent.HARD_BLOCK:
                 break
-        # kill any player within the explosion radius
-        for p in self.alive_players():
-            if p.x == xb and yb - BOMB_RADIUS <= p.y and p.y <= yb + BOMB_RADIUS:
-                self.kill(p)
-            elif p.y == yb and xb - BOMB_RADIUS <= p.x and p.x <= xb + BOMB_RADIUS:
-                self.kill(p)
     
     def kill(self, player):
         """Kill the given player."""

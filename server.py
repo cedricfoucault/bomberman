@@ -60,7 +60,7 @@ class BaseConnectionHandle(ShutdownMixIn):
     A connection handle is an object that identifies a client-server connection,
     other processes will use this object as an interface."""
     # tells whether the connection should be shut down when the main thread is done
-    daemon_threads = False
+    daemon_threads = True
     # time interval between checks to a shutdown request (in secs)
     poll_interval = 0.5
     # timeout (in sec) to shut down the connection automatically
@@ -830,7 +830,8 @@ class PartyServer(Server):
         if (packet.type == packets.ActionRequestPacket.TYPE):
             action_packet = packets.ActionRequestPacket.process_raw_data(packet.payload)
         # process the packet if it is not outdated (given turn is the current turn)
-            if self.current_turn == action_packet.turn:
+        # or if DUMP_OLD_PACKET was set to False
+            if self.current_turn == action_packet.turn or (not DUMP_OLD_PACKET):
                 action = action_packet.action
                 # save the action
                 self._action_record_lock.acquire()
@@ -845,6 +846,7 @@ class PartyServer(Server):
                 # else, ignore the packet
                 # ------ exit critical section -------
                 self._action_record_lock.release()
+        # ... or process it anyway if DUMP_OLD_PACKET was set to False
     
     def get_action_record(self):
         """Get the current packet record"""

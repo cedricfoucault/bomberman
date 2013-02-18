@@ -17,7 +17,7 @@ class ConnectionHandle(server.ShutdownMixIn):
     A connection handle is an object that identifies a client-server connection,
     other processes will use this object as an interface."""
     # tells whether the connection should be shut down when the main thread is done
-    daemon_threads = False
+    daemon_threads = True
     # time interval between checks to a shutdown request (in secs)
     poll_interval = 0.5
     # the packet received from this connection should be read as instances of this class

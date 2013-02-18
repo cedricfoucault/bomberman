@@ -1,0 +1,66 @@
+
+=== Introduction ===
+
+This file briefly documents the monitoring program.  This program is able to
+introduce some delay and jitter in UDP streams and TCP connections.  Just for
+the sake of being clear, the _delay_ of a package is the time
+it takes to travel from source to destination. The _jitter_ of a stream of
+packages is a mesure of the deviation that packages of the stream suffer.
+
+The monitor is meant to be placed `in front' of the server, i.e.  it will act
+as a new server that receives your TCP connections or UDP streams and forward
+them to the actual server, introducing a variable delay on the packages.
+
+
+=== Invocation syntax ===
+
+The program shall be invoked using the following syntax:
+
+ monitor udp|tcp FORWARD_IP FORWARD_PORT LISTEN_PORT DELAY JITTER
+
+where
+ - udp|tcp : pick one of both to make the monitor work in this transport
+   protocol
+
+ - FORWARD_IP and FORWARD_PORT : ip address and port of your actual actual
+   server where data is to be forwarded
+
+ - LISTEN_PORT : the port where the monitor will listen.  The monitor will
+   accept conenctions comming from any interface of the machine where it runs
+
+ - DELAY and JITTER : they tell how the monitor will delay your packages, which
+   depends on the transport protocol (TCP or UDP).  Both DELAY and JITTER shall
+   be positive integers expressed in miliseconds.  
+
+   The monitor first computes a value d defined as:
+
+   d := max (0, DELAY + (JITTER * x))
+ 
+   where x is taken uniformely at random in the real interval [-1, 1].
+   Note that d >= 0 always.
+ 
+   For a TCP connection, a data chunk that arrives from one given connection at
+   time t will be forwarded at time
+   
+   max (t + d, t' + 1ms)
+
+   where t' is the sending time of the last package received from the
+   connection.  This ensures that chunks of data within the *same* TCP
+   connection are forwarded in the same order they were received, with at least
+   1ms delay.  Data chunks within different TCP connections are not warranted
+   to be forwarded in the same order in which they were received.
+ 
+   For UDP streams, a package that arrives at time t will be forwarded
+   at time
+   
+   t + d.
+ 
+   This could forward packages in an order different than that in which they
+   were received.
+
+=== Authors ===
+
+In case of problems, contact the authors:
+
+Benoit Barbot <barbot@lsv.ens-cachan.fr>,
+Cesar Rodriguez <rodrigue@lsv.ens-cachan.fr>
