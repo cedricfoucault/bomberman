@@ -21,6 +21,11 @@ DEBUG = False
 # DUMP_OLD_PACKET = False
 DUMP_OLD_PACKET = True
 
+# USE_MONITORING = False
+USE_MONITORING = True
+DELAY = 100
+JITTER = 100
+
 
 Action = enum.enum("Action",
     ERROR = 0,

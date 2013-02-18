@@ -8,6 +8,7 @@ import select
 import sys
 import threading
 import time
+import subprocess
 
 debug = DEBUG
 # debug = True
@@ -403,7 +404,7 @@ class ParrotServer(Server):
 
 class LobbyServer(Server):
     """The lobby server maintains a list of pending parties, and creates a new
-    party if it recieves a packet of appropriate type by a client.
+    party if it receives a packet of appropriate type by a client.
     The lobby server also periodically sends to the connected clients
     the list of current pending parties and their status."""
     ConnectionHandle = LobbyConnectionHandle
@@ -723,12 +724,23 @@ class PartyServer(Server):
         new = cls((ip, 0), lobby)
         # update the address and party info
         new.address = new.socket.getsockname()
+        # if we are using the monitoring tool, we have to launch it on an arbitrary port
+        # so that the connection to this server can be delayed, and keep this port in memory
+        if USE_MONITORING:
+            _, port = new.address
+            new.monitoring_port = port + 1
+            # open the monitoring tool in a sub-process
+            subprocess.Popen(['monitor/monitor', 'tcp', ip, str(port),
+                str(new.monitoring_port), str(DELAY), str(JITTER)])
         return new
         
     def get_info(self):
         """Returns the PartyInfo object matching this server."""
         idp = self.id
         ip, port = self.address
+        # if we use the montoring tool, give the monitoring port to the clients
+        if USE_MONITORING:
+            port = self.monitoring_port
         # n_players = len(self.get_active_connections())
         n_players = self.n_players
         max_players = self.max_players
