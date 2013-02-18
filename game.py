@@ -239,14 +239,14 @@ class GameController(ShowBase):
         self.bombs = [(xb, yb, ib - 1) for xb, yb, ib in self.bombs]
         # add to to_explode every bomb whose counter is zero
         for xb, yb, ib in self.bombs:
-            if ib == 0:
+            if ib <= 0:
                 self.to_explode.append((xb, yb))
     
     def trigger_explosion(self, xb, yb):
         """Start a bomb explosion event at (xb, yb)."""
         # destroy the bomb and remove it from the list of active bombs
         self.map[yb][xb].destroy()
-        self.bombs = [(x, y, i) for (x, y, i) in self.bombs if (x != xb and y != yb)]
+        self.bombs = [(x, y, i) for (x, y, i) in self.bombs if (x != xb or y != yb)]
         # build the list of positions inside the explosion radius
         # inside_radius = []
         # inside_radius.extend([(xb + i, yb) for i in xrange(1, BOMB_RADIUS + 1)

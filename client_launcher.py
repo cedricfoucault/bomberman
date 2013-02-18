@@ -1,8 +1,9 @@
 import sys
 import os
 import subprocess
+from gameconst import *
 
-debug = True
+debug = DEBUG
 
 if __name__ == "__main__":
     PORT = 42042 # the server's port number

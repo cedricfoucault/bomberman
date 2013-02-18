@@ -17,14 +17,15 @@ BOMB_COUNTER_INIT = 12
 BOMB_RADIUS = 3
 
 DEBUG = False
+# DEBUG = True
 
-# DUMP_OLD_PACKET = False
-DUMP_OLD_PACKET = True
+DUMP_OLD_PACKET = False
+# DUMP_OLD_PACKET = True
 
 USE_MONITORING = False
 # USE_MONITORING = True
-DELAY = 100
-JITTER = 100
+DELAY = 200
+JITTER = 50
 
 
 Action = enum.enum("Action",
