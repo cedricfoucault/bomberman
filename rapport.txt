@@ -8,4 +8,6 @@ J'ai appris à utiliser différents paradigmes pour programmer :
 multithreading, tâches/mainloop, processus, select, bloquant/non-bloquant,
 communication par mémoire partagée, communication par messages…
 et à me servir des différentes primitives associées.
-J'ai jaugée les avantages et inconvénients des différentes solutions
+J'ai jaugée les avantages et inconvénients des différentes solutions.
+
+Client utilisateur marche sur les systèmes UNIX mais pas windows car pas de fork.
