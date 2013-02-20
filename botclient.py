@@ -4,7 +4,7 @@ import socket_utils
 import sys
 import time
 
-debug = True
+from gameconst import *
 
 class BotClient(object):
     """Class for the lobby client."""
@@ -22,7 +22,7 @@ class BotClient(object):
         """Connect the client with the server located at the given address."""
         sock = socket.socket(self.address_family, self.socket_type)
         sock.connect(addr)
-        if debug: print "Connected to " + str(addr)
+        if VERBOSE: print "Connected to " + str(addr)
         self.sock = sock
         
     def reconnect(self, addr):
@@ -43,18 +43,21 @@ class BotClient(object):
         return False
             
     def close_connection(self):
-        if debug: print "Shutting down connection with " + str(self.sock.getpeername())
+        if DEBUG: print "Shutting down connection with " + str(self.sock.getpeername())
         socket_utils.shutdown_close(self.sock)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print "Usage: lobbyclient server_ip server_port party_no"
+    if len(sys.argv) < 2:
+        print "Usage: botclient server_ip server_port party_no || botclient party_no"
         sys.exit(-1)
+    
+    LOCALHOST = '127.0.0.1'
+    LOBBYPORT = 42042
     # the lobby server ip and port to connect on
-    ip = sys.argv[1]
-    port = int(sys.argv[2])
+    ip = sys.argv[1] if len(sys.argv) > 2 else LOCALHOST
+    port = int(sys.argv[2]) if len(sys.argv) > 2 else LOBBYPORT
     # the party id (no) to connect to
-    party_no = int(sys.argv[3])
+    party_no = int(sys.argv[3]) if len(sys.argv) > 2 else int(sys.argv[1])
     # instance the bot
     bot = BotClient()
     # connect to the lobby

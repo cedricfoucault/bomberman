@@ -1,4 +1,4 @@
-from mixins import *
+from task_shutdown import *
 from gameconst import *
 
 import packets
@@ -6,9 +6,6 @@ import socket_utils
 import select
 import socket
 import sys
-
-debug = DEBUG
-# debug = False
 
 class TaskConnectionHandle(TaskShutdownMixIn):
     """Base class for connection handles, using Panda3D tasks.
@@ -32,7 +29,7 @@ class TaskConnectionHandle(TaskShutdownMixIn):
 
     def start_handling(self):
         """Start processing (polling) the connection"""
-        if debug: print "handling " + str(self.addr)
+        if VERBOSE: print "handling " + str(self.addr)
         self.do_task(self._poll, self.poll_interval)
     
     def _poll(self):
@@ -56,12 +53,12 @@ class TaskConnectionHandle(TaskShutdownMixIn):
             try:
                 # try to send the packet
                 packet.send(self.conn)
-                if debug: print "Sent " + str(packet) + " to " + str(self.addr)
+                if PRINT_PACKETS: print "Sent " + str(packet) + " to " + str(self.addr)
                 return True
             except socket.error, e:
                 # if the connection was closed on the client side,
                 # shut down the process
-                if debug: print >> sys.stderr, str(e)
+                if VERBOSE: print >> sys.stderr, str(e)
                 self.shutdown()
                 return False
         else:
@@ -77,16 +74,16 @@ class TaskConnectionHandle(TaskShutdownMixIn):
             try:
                 # try to read the packet
                 packet = self.__class__.packet_class.recv(self.conn)
-                if debug: print "Received: " + str(packet) + " from " + str(self.addr)
+                if PRINT_PACKETS: print "Received: " + str(packet) + " from " + str(self.addr)
                 # process it
                 self._process_packet(packet)
             except socket.error, e:
                 # if the connection was closed on the client side,
                 # shut down the process
-                if debug: print >> sys.stderr, str(e)
+                if VERBOSE: print >> sys.stderr, str(e)
                 self.shutdown()
             except packets.PacketMismatch, e:
-                if debug: print >> sys.stderr, str(e)
+                if VERBOSE: print >> sys.stderr, str(e)
 
     def _process_packet(self, packet):
         """Process a packet which was received from this connection.
@@ -95,7 +92,7 @@ class TaskConnectionHandle(TaskShutdownMixIn):
         
     def _do_on_shutdown(self):
         """On shutdown, properly close the socket."""
-        if debug: print "shutting down " + str(self.addr)
+        if VERBOSE: print "shutting down " + str(self.addr)
         self.close_connection()
 
     def close_connection(self):
@@ -108,4 +105,3 @@ class TaskConnectionHandle(TaskShutdownMixIn):
         it will be send on the next write poll if the socket is available.
         It overrides any previous send request which has not been processed."""
         self.packet_to_send = packet
-

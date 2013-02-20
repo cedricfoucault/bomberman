@@ -9,16 +9,13 @@ from direct.gui.OnscreenText import OnscreenText
 from direct.task import Task
 import game
 
-from connection import TaskConnectionHandle
+from task_connection import TaskConnectionHandle
 import packets
 import socket
 import socket_utils
 import select
 import sys
 
-debug = DEBUG
-# debug = True
-# debug = False
 
 class PartyClientConnectionHandle(TaskConnectionHandle):
     """Class for client to party-server connections."""
@@ -93,7 +90,7 @@ class PartyClient(object, ShowBase):
         sock = socket.socket(self.address_family, self.socket_type)
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         sock.connect(addr)
-        if debug: print "Connected to " + str(addr)
+        if VERBOSE: print "Connected to " + str(addr)
         self.conn = PartyClientConnectionHandle(sock, addr, self)
     
     def update_party_status(self, status):
@@ -118,7 +115,7 @@ class PartyClient(object, ShowBase):
         self.conn.send(action_packet)
     
     def notice_connection_shutdown(self, handle):
-        if debug: print "The connection to " + str(handle.addr) + " was shut down\nQuitting..."
+        if VERBOSE: print "The connection to " + str(handle.addr) + " was shut down\nQuitting..."
         self.quit()
         
     def quit(self):

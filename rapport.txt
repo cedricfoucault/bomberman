@@ -11,3 +11,6 @@ et à me servir des différentes primitives associées.
 J'ai jaugée les avantages et inconvénients des différentes solutions.
 
 Client utilisateur marche sur les systèmes UNIX mais pas windows car pas de fork.
+
+Panda3D SDK
+http://www.panda3d.org/download.php?sdk&version=1.7.2

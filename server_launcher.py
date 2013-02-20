@@ -1,5 +1,7 @@
-from server import *
+from lobby_server import *
+from party_server import *
 import sys
+import threading
 
 def main():
     """Main server process"""
