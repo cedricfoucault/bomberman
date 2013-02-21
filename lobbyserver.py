@@ -2,7 +2,7 @@ from server import Server
 from thread_connection import *
 import packets
 from gameconst import *
-from party_server import *
+from partyserver import *
 
 import time
 
@@ -13,7 +13,7 @@ class LobbyConnectionHandle(ThreadConnectionHandle):
     
     def _process_client_packet(self, packet):
         if packet.type == packets.PacketType.CREATE_PARTY:
-            self.server.create_party()
+            self.master.create_party()
 
 class LobbyServer(Server):
     """The lobby server maintains a list of pending parties, and creates a new
@@ -38,18 +38,8 @@ class LobbyServer(Server):
         # instance a new party server
         # new_party = PendingPartyServer.create_new(self)
         new_party = PartyServer.create_new(self)
-        t = threading.Thread(
-            target=new_party.serve_forever,
-            args=()
-        )
-        t.daemon = True
-        t.start()
-        t = threading.Thread(
-            target=new_party.send_loop,
-            args=()
-        )
-        t.daemon = True
-        t.start()
+        new_party.do_in_thread(fun=new_party.serve_forever)
+        new_party.do_in_thread(fun=new_party.send_loop)
         
         self._parties_lock.acquire()
         # ------ enter critical section ------
@@ -90,9 +80,11 @@ class LobbyServer(Server):
         packet = packets.LobbyPacket(parties_info).wrap()
         self.send_to_all(packet)
     
-    def send_parties_periodically(self):
+    def send_loop(self):
         """Periodically send to all clients the list pending parties."""
         while not self.is_shut_down():
             self.send_parties()
             time.sleep(self.__class__.SEND_INTERVAL)
         if VERBOSE: print "stop sending parties"
+    
+    

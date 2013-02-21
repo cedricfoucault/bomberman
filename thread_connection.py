@@ -9,7 +9,7 @@ import sys
 
 class ThreadConnectionHandle(ThreadShutdownMixIn):
     """Base class for connection handles.
-    A connection handle is an object that identifies a client-server connection,
+    A connection handle is an object that identifies a client-master connection,
     other processes will use this object as an interface."""
     # tells whether the connection should be shut down when the main thread is done
     daemon_threads = True
@@ -23,12 +23,12 @@ class ThreadConnectionHandle(ThreadShutdownMixIn):
     # dumb client counter, incremented every time a new client is instanced
     _client_counter = 0
     
-    def __init__(self, conn, client_addr, server, start=True, no_init=False):
+    def __init__(self, conn, addr, master, start=True, no_init=False):
         super(ThreadConnectionHandle, self).__init__()
         if not no_init:
-            self.conn        = conn # the socket connecting the server with the client
-            self.client_addr = client_addr # the client's address
-            self.server      = server # a reference to the server owning the connection
+            self.conn        = conn # the socket doing the connection
+            self.addr = addr # the address the socket is connected to
+            self.master      = master # a reference to the owner of the connection
             self.thread      = threading.Thread( # the receiver thread
                 target=self._process_connection,
                   args=()
@@ -45,9 +45,9 @@ class ThreadConnectionHandle(ThreadShutdownMixIn):
     def from_instance(cls, handle, start=True):
         """Create a new connection handle from an existing one."""
         new = cls(None, None, None, None, no_init=True)
-        new.conn        = handle.conn # the socket connecting the server with the client
-        new.client_addr = handle.client_addr # the client's address
-        new.server      = handle.server # a reference to the server owning the connection
+        new.conn        = handle.conn # the socket connecting the master with the client
+        new.addr = handle.addr # the client's address
+        new.master      = handle.master # a reference to the master owning the connection
         new.thread      = threading.thread( # the receiver thread
             target=new._process_connection,
             args=()
@@ -61,7 +61,7 @@ class ThreadConnectionHandle(ThreadShutdownMixIn):
 
     def start_handling(self):
         """Start processing the connection"""
-        if VERBOSE: print "handling " + str(self.client_addr)
+        if VERBOSE: print "handling " + str(self.addr)
         self.thread.start()
         
     def _process_connection(self, poll_interval=poll_interval):
@@ -82,7 +82,7 @@ class ThreadConnectionHandle(ThreadShutdownMixIn):
                     # try to read the packet
                     packet = self.__class__.packet_class.recv(self.conn)
                     if PRINT_PACKETS:
-                        print "Received: " + str(packet) + " from " + str(self.client_addr)
+                        print "Received: " + str(packet) + " from " + str(self.addr)
                     # process it
                     self._process_client_packet(packet)
                     # this client is active, reset _time_left countdown
@@ -104,9 +104,9 @@ class ThreadConnectionHandle(ThreadShutdownMixIn):
         pass
         
     def _do_on_shutdown(self):
-        """On shutdown, notice the server."""
-        if VERBOSE: print "shutting down " + str(self.client_addr)
-        self.server.notice_connection_shutdown(self)
+        """On shutdown, notice the master."""
+        if VERBOSE: print "shutting down " + str(self.addr)
+        self.master.notice_connection_shutdown(self)
 
     def close_connection(self):
         """Close the socket doing the connection"""
@@ -120,7 +120,7 @@ class ThreadConnectionHandle(ThreadShutdownMixIn):
         try:
             packet.send(self.conn)
             if PRINT_PACKETS:
-                print "Sent " + str(packet) + " to " + str(self.client_addr)
+                print "Sent " + str(packet) + " to " + str(self.addr)
         except socket.error, e:
             self.shutdown(non_blocking=True)
         # ------ exit critical section -------

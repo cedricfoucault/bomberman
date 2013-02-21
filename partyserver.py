@@ -10,8 +10,8 @@ import time
 class PartyConnectionHandle(ThreadConnectionHandle):
     def _process_client_packet(self, packet):
         """Record any received ingame packet, else ignore it."""
-        if self.server.is_ingame:
-            self.server.record_packet(packet, self)
+        if self.master.is_ingame:
+            self.master.record_packet(packet, self)
 
 class PartyServer(Server):
     """A PartyServer is a waiting room for the players before

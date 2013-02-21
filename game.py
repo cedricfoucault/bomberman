@@ -8,8 +8,7 @@ from direct.actor.Actor import Actor
 from direct.task import Task
 from panda3d.core import *
 
-# class GameController(ShowBase):
-class GameController(ShowBase):
+class GameController():
     """Controller for a bomberman game"""
     VIEWS = {
         'floor': {
@@ -27,15 +26,11 @@ class GameController(ShowBase):
     }
     
     def __init__(self, client, width, height, turn_length, map_init, players, me):
-        # super(GameController, self).__init__()
-        # ShowBase.__init__(self)
         self.client = client
         # init constants for this party
         self.width = width
         self.height = height
         self.turn_length = turn_length
-        # init the environment
-        self.init_world_view()
         # build the initial map for the game
         self.map = [[Tile(map_init[y * width + x], x, y, height)
                     for x in xrange(width)] for y in xrange(height)]
@@ -51,9 +46,10 @@ class GameController(ShowBase):
                       if map_init[y * width + x] == TileContent.BOMB]
         # the bomb to trigger will be added to this queue
         self.to_explode = collections.deque()
+        # init the environment
+        self.init_world_view()
         # init the keyboard handler
         self.keyboard_handler = ActionKeyHandler(self.client)
-        # self.keyboard_handler = LocalActionKeyHandler(self, self.players[me])
     
     def init_world_view(self):
         """Init the 3D world"""
@@ -132,31 +128,9 @@ class GameController(ShowBase):
             if 'texture' in params:
                 w.setTexture(texture, 1)
             w.reparentTo(render)
-        
-        # # left wall
-        # wall_left = loader.loadModel(params['model'])
-        # wall_left.setColor(r,g,b,a)
-        # wall_left.setScale(params['scale'], params['scale'] * (self.height + 2), 1)
-        # wall_left.setPos(- 1, self.height / 2, 0)
-        # wall_left.reparentTo(render)
-        # # right wall
-        # wall_right = loader.loadModel(params['model'])
-        # wall_right.setColor(r,g,b,a)
-        # wall_right.setScale(params['scale'], params['scale'] * (self.height + 2), 1)
-        # wall_right.setPos(self.width + 1.0, self.height / 2, 0)
-        # # wall_right.reparentTo(render)
-        # # top wall
-        # wall_top = loader.loadModel(params['model'])
-        # wall_top.setColor(r,g,b,a)
-        # wall_top.setScale(params['scale'] * (self.width + 2), params['scale'], 1)
-        # wall_top.setPos(self.width / 2, -1, 0)
-        # wall_top.reparentTo(render)
-        # # bottom wall
-        # wall_bottom = loader.loadModel(params['model'])
-        # wall_bottom.setColor(r,g,b,a)
-        # wall_bottom.setScale(params['scale'] * (self.width + 2), params['scale'], 1)
-        # wall_bottom.setPos(self.width / 2, self.height, 0)
-        # wall_bottom.reparentTo(render)
+        # status text
+        text = "alive: " + str(len(self.alive_players()))
+        self.client.update_status_text(text)
         
     
     def execute_turn(self, turn_no, actions):
@@ -183,11 +157,14 @@ class GameController(ShowBase):
     
     def declare_winner(self, p):
         """Declare the given player winner"""
-        pass
+        if p == self.players[self.me]:
+            text = "You won!"
+            self.client.update_status_text(text)
     
     def declare_draw(self):
         """Declare a draw (no winner)"""
-        pass
+        text = "Draw."
+        self.client.update_status_text(text)
     
     def commit_actions(self, actions):
         for i, a in enumerate(actions):
@@ -247,25 +224,6 @@ class GameController(ShowBase):
         # destroy the bomb and remove it from the list of active bombs
         self.map[yb][xb].destroy()
         self.bombs = [(x, y, i) for (x, y, i) in self.bombs if (x != xb or y != yb)]
-        # build the list of positions inside the explosion radius
-        # inside_radius = []
-        # inside_radius.extend([(xb + i, yb) for i in xrange(1, BOMB_RADIUS + 1)
-        #                                     if xb + i < self.width])
-        # inside_radius.extend([(xb - i, yb) for i in xrange(1, BOMB_RADIUS + 1)
-        #                                     if xb - i >= 0])
-        # inside_radius.extend([(xb, yb - i) for i in xrange(1, BOMB_RADIUS + 1)
-        #                                     if yb - i >= 0])
-        # inside_radius.extend([(xb, yb + i) for i in xrange(1, BOMB_RADIUS + 1)
-        #                                     if yb + i < self.height])
-        # # check every tile within the explosion radius
-        # for (x, y) in inside_radius:
-        #     t = self.map[y][x]
-        #     # destroy any destructible block within the radius
-        #     if t.content == TileContent.SOFT_BLOCK:
-        #         t.destroy()
-        #     # add any bomb within the radius to a list of bombs to explode
-        #     elif t.content == TileContent.BOMB:
-        #         self.to_explode.append((x, y))
         
         # kill any player on the tile where the bomb explodes
         for p in self.alive_players():
@@ -340,11 +298,17 @@ class GameController(ShowBase):
         """Kill the given player."""
         # trigger the death of the player
         player.die()
+        # update the status text
+        text = "alive: " + str(len(self.alive_players()))
+        self.client.update_status_text(text)
         # if the player was me, disable the keyboard handler (stop sending actions)
         if player == self.players[self.me]:
             self.keyboard_handler.destroy()
             self.keyboard_handler = None
-        # keep the player in the list of players but keep him dead
+            text = "You lose!"
+            self.client.update_status_text(text)
+        # (keep the player in the list of players but keep him dead)
+        
     
 
 class Player(object):
@@ -540,81 +504,3 @@ class ActionKeyHandler(DirectObject.DirectObject):
     def destroy(self):
         """Get rid of this handler"""
         self.ignoreAll()
-
-
-class LocalActionKeyHandler(DirectObject.DirectObject):
-    def __init__(self, game, player):
-        # keep reference to the game controller and "me" player
-        self.game = game
-        self.me = player
-        # init the handler send the actions corresponding to the key pressed
-        self.accept('x', self.pose_bomb)
-        self.accept('arrow_up', self.move_up)
-        self.accept('arrow_up-repeat', self.move_up)
-        self.accept('arrow_down', self.move_down)
-        self.accept('arrow_down-repeat', self.move_down)
-        self.accept('arrow_right', self.move_right)
-        self.accept('arrow_right-repeat', self.move_right)
-        self.accept('arrow_left', self.move_left)
-        self.accept('arrow_left-repeat', self.move_left)
-    
-    def move_up(self):
-        self.game.execute_turn(0, [Action.MOVE_UP, Action.DO_NOTHING, Action.DO_NOTHING, Action.DO_NOTHING])
-        # self.me.move(Action.MOVE_UP, self.game.turn_length)
-    
-    def move_down(self):
-        self.game.execute_turn(0, [Action.MOVE_DOWN, Action.DO_NOTHING, Action.DO_NOTHING, Action.DO_NOTHING])
-        # self.me.move(Action.MOVE_DOWN, self.game.turn_length)
-    
-    def move_right(self):
-        self.game.execute_turn(0, [Action.MOVE_RIGHT, Action.DO_NOTHING, Action.DO_NOTHING, Action.DO_NOTHING])
-        # self.me.move(Action.MOVE_RIGHT, self.game.turn_length)
-    
-    def move_left(self):
-        self.game.execute_turn(0, [Action.MOVE_LEFT, Action.DO_NOTHING, Action.DO_NOTHING, Action.DO_NOTHING])
-        # self.me.move(Action.MOVE_LEFT, self.game.turn_length)
-    
-    def pose_bomb(self):
-        self.game.execute_turn(0, [Action.POSE_BOMB, Action.DO_NOTHING, Action.DO_NOTHING, Action.DO_NOTHING])
-        # self.game.add_bomb(self.me.x, self.me.y)
-    
-    def destroy(self):
-        """Get rid of this handler"""
-        self.ignoreAll()
-
-
-# def test(game, player, time_interval):
-#     player.move(Action.MOVE_UP, time_interval * 1000)
-#     # Thread.considerYield()
-#     # Thread.sleep(time_interval)
-#     Thread.sleep(time_interval)
-#     player.move(Action.MOVE_UP, time_interval * 1000)
-#     # Thread.considerYield()
-#     Thread.sleep(time_interval)
-#     game.add_bomb(player.x, player.y)
-#     # Thread.considerYield()
-#     Thread.sleep(time_interval)
-#     player.move(Action.MOVE_DOWN, time_interval * 1000)
-    # Thread.considerYield()
-
-# def looping_call(fun, time_interval):
-#     fun()
-#     time.sleep(time_interval)
-#     looping_call()
-
-if __name__ == "__main__":
-    n = 17
-    m = 15
-    t = 200
-    g = GameController(None, n, m, t, mapgen.generate(n, m),
-        [(0, 0), (n - 1, 0), (0, m - 1), (n - 1, m - 1)], 3)
-    # me = g.players[g.me]
-    # t = threading.Thread(
-    #     # target = looping_call,
-    #     # args = (taskMgr.step, 1 / 60.0)
-    #     target=test,
-    #     args=(g, me, 0.002 * t)
-    # ).start()
-    # messenger.toggleVerbose()
-    g.run()
-    

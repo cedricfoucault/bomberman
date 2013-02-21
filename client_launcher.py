@@ -45,7 +45,7 @@ if __name__ == "__main__":
     else:
         # parent process: wait until the lobby client process is done
         _, exitcode = os.wait()
-        if DEBUG: print exitcode
+        if DEBUG: print "lobby client exitcode: " + str(exitcode)
         # in any case, terminate the child process before continuing
         # in order to exit gracefully
         # (e.g. if a kill signal was sent to the parent)

@@ -95,18 +95,19 @@ class PartyClient(object, ShowBase):
     
     def update_party_status(self, status):
         """Update the current party status info"""
-        self.update_status_text(status.n_players, status.max_players)
+        text = "status: %d/%d" % (status.n_players, status.max_players)
+        self.update_status_text(text)
         
-    def update_status_text(self, n_players, max_players):
+    def update_status_text(self, text):
         """Update the status text displayed above on the screen"""
-        text = "status: %d/%d" % (n_players, max_players)
         self.status_text.setText(text)
     
     def start_game(self, init):
         """Start the game with the given initialization packet"""
+        text = "status: %d/%d" % (init.n_players, init.n_players)
+        self.update_status_text(text)
         self.controller = game.GameController(self, init.width, init.height,
             init.turn_length, init.tiles, init.positions, init.player_ID)
-        self.update_status_text(init.n_players, init.n_players)
         self.is_ingame = True
     
     def send_action_request(self, action):
