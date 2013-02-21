@@ -60,7 +60,7 @@ class PartyInfo(object):
 class SubPacket(object):
     # TYPE
     def wrap(self):
-        return GamePacket(self.TYPE, self.get_raw_data())
+        return GamePacket(self.TYPE, self.encode())
         
 
 class LobbyPacket(SubPacket):
@@ -87,14 +87,14 @@ class LobbyPacket(SubPacket):
     def __str__(self):
         return "(num parties: %d | parties: %s)" % (self.n_parties, str(self.parties))
     
-    def get_raw_data(self):
+    def encode(self):
         data = struct.pack("<I", self.n_parties)
         for p in self.parties:
             data += p.encode()
         return data
     
     @classmethod
-    def process_raw_data(cls, data):
+    def decode(cls, data):
         n_parties = struct.unpack("<I", data[:4])[0]
         parties = [ PartyInfo.decode(
             data[4 + PartyInfo.SIZE * i : 4 + PartyInfo.SIZE * (i + 1)])
@@ -109,11 +109,11 @@ class CreatePartyPacket(SubPacket):
     def __init__(self):
         pass
     
-    def get_raw_data(self):
+    def encode(self):
         return ""
         
     @classmethod
-    def process_raw_data(cls, data):
+    def decode(cls, data):
         return cls()
 
 class PartyStatusPacket(SubPacket):
@@ -129,11 +129,11 @@ class PartyStatusPacket(SubPacket):
         self.n_players = n_players
         self.max_players = max_players
 
-    def get_raw_data(self):
+    def encode(self):
         return struct.pack("<II", self.n_players, self.max_players)
 
     @classmethod
-    def process_raw_data(cls, data):
+    def decode(cls, data):
         n_players, max_players = struct.unpack("<II", data)
         return cls(n_players, max_players)
         
@@ -178,7 +178,7 @@ class InitPacket(SubPacket):
             self.player_ID, self.n_players, self.turn_length,
             self.width, self.height, str(self.tiles), str(self.positions))
     
-    def get_raw_data(self):
+    def encode(self):
         data = struct.pack("<IIIII", self.player_ID, self.n_players,
             self.turn_length, self.width, self.height)
         for t in self.tiles:
@@ -188,7 +188,7 @@ class InitPacket(SubPacket):
         return data
 
     @classmethod
-    def process_raw_data(cls, data):
+    def decode(cls, data):
         pID, k, dturn, n, m = struct.unpack("<IIIII", data[:20])
         data = data[20:]
         tiles = [ struct.unpack("B", data[i])[0]
@@ -223,11 +223,11 @@ class ActionRequestPacket(SubPacket):
         action = random.choice(Action.values)
         return cls(turn, action)
     
-    def get_raw_data(self):
+    def encode(self):
         return struct.pack("<IB", self.turn, self.action)
     
     @classmethod
-    def process_raw_data(cls, data):
+    def decode(cls, data):
         turn, action = struct.unpack("<IB", data)
         return cls(turn, action)
 
@@ -254,11 +254,11 @@ class ActionsCommitPacket(SubPacket):
         ]
         return "(turn: %s | actions: (%s))" % (str(self.turn), ", ".join(actions_str))
     
-    def get_raw_data(self):
+    def encode(self):
         return struct.pack('<II' + 'B' * self.num_players, self.turn, self.num_players, *self.actions)
         
     @classmethod
-    def process_raw_data(cls, data):
+    def decode(cls, data):
         # items = struct.unpack('<II' + 'B' * NUM_PLAYERS, data)
         items = struct.unpack('<II', data[:8])
         turn = items[0]
@@ -296,13 +296,13 @@ class GamePacket(object):
     def __str__(self):
         if self.type in self.__class__.payload_classes:
             PayloadClass = self.__class__.payload_classes[self.type]
-            processed_payload = PayloadClass.process_raw_data(self.payload)
+            processed_payload = PayloadClass.decode(self.payload)
             return "(type: %s | payload: %s)" % (PacketType.to_str(self.type), str(processed_payload))
         elif self.type == PacketType.ACTION:
             processed_payload = \
-                ActionRequestPacket.process_raw_data(self.payload) \
+                ActionRequestPacket.decode(self.payload) \
                 if len(self.payload) == ActionRequestPacket.SIZE \
-                else ActionsCommitPacket.process_raw_data(self.payload)
+                else ActionsCommitPacket.decode(self.payload)
             return "(type: %s | payload: %s)" % (PacketType.to_str(self.type), str(processed_payload))
                 
         else:
@@ -314,9 +314,9 @@ class GamePacket(object):
         ptype = random.choice(cls.payload_classes.keys())
         PayloadClass = cls.payload_classes[ptype]
         if "random" in dir(PayloadClass):
-            payload = PayloadClass.random().get_raw_data()
+            payload = PayloadClass.random().encode()
         else:
-            payload = PayloadClass().get_raw_data()
+            payload = PayloadClass().encode()
         return cls(ptype, payload)
     
     def send(self, socket):
@@ -332,35 +332,6 @@ class GamePacket(object):
         # decode the packet type, leave payload as is
         ptype = struct.unpack("B", packet[0])[0]
         payload = packet[1:] if length >= 2 else ''
-        # if length >= 2:
-        #             ptype, payload = struct.unpack("Bs", packet)
-        #         else:
-        #             ptype = struct.unpack("B", packet)[0]
-        #             payload = None
-        # # read the packet's type
-        # ptype = cls._read_type(socket)
-        # # read the packet's payload
-        # if ptype not in cls.payload_classes:
-        #     # raise a PacketMismatch exception
-        #     # if the type read was not any of the expected type
-        #     valid_ptypes = [str(pt) for pt in cls.payload_classes.keys()]
-        #     err_msg = "Packet type not recognized.\n"
-        #     err_msg += "Received: %d\n" % ptype
-        #     err_msg += "Expected: %s" % (" or ".join(valid_ptypes))
-        #     raise PacketMismatch(err_msg)
-        # else:
-        #     payload = def recv(sock, size):
-        #         # call socket.recv() until we have actually received data of size "size"
-        #         data = ''
-        #         while len(data) < size:
-        #             chunk = sock.recv(size - len(data))
-        #             if not chunk:
-        #                 raise socket.error("socket connection broken")
-        #             data += chunk
-        #         return data
-        #     # the payload's length is inferred from the packet's type
-        #     payload = socket_utils.recv(socket, cls.payload_classes[ptype].SIZE)
-        # return a new packet instance
         return cls(ptype, payload)
     
     @classmethod

@@ -9,8 +9,11 @@ import sys
 
 class TaskConnectionHandle(TaskShutdownMixIn):
     """Base class for connection handles, using Panda3D tasks.
-    A connection handle is an object that identifies a client-server connection,
-    other processes will use this object as an interface."""
+    A connection handle is an object that identifies a connection,
+    other processes will use this object as an interface.
+    The connection's task is to periodically poll the connection
+    for reading and (possibly) for writing (if a packet to write was pushed),
+    using non-blocking calls to select (timeout = 0s)."""
     # time interval between poll checks (in s)
     # if this is 0, the poll checks will be done once every frame
     poll_interval = 0

@@ -8,9 +8,12 @@ import socket
 import sys
 
 class ThreadConnectionHandle(ThreadShutdownMixIn):
-    """Base class for connection handles.
-    A connection handle is an object that identifies a client-master connection,
-    other processes will use this object as an interface."""
+    """Base class for connection handles using threading.
+    A connection handle is an object that identifies a connection,
+    other processes will use this object as an interface.
+    The connection's thread attempts to read from the connected socket.
+    If nothing is read for a given time, the connection will timeout and will
+    be shut down automatically."""
     # tells whether the connection should be shut down when the main thread is done
     daemon_threads = True
     # time interval between checks to a shutdown request (in secs)

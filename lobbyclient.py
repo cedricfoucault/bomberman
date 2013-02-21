@@ -23,7 +23,7 @@ class LobbyClientConnectionHandle(TaskConnectionHandle):
         """Get the current parties with their status from the received packet.
         Update the client's list of parties accordingly."""
         if packet.type == packets.PacketType.LOBBY:
-            packet = packets.LobbyPacket.process_raw_data(packet.payload)
+            packet = packets.LobbyPacket.decode(packet.payload)
             self.client.update_parties(packet.parties)
 
     def _do_on_shutdown(self):

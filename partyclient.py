@@ -36,17 +36,17 @@ class PartyClientConnectionHandle(TaskConnectionHandle):
         Update the client's observed party status accordingly or
         tell the client to start the game."""
         if packet.type == packets.PacketType.PARTY_STATUS:
-            party_status = packets.PartyStatusPacket.process_raw_data(packet.payload)
+            party_status = packets.PartyStatusPacket.decode(packet.payload)
             self.client.update_party_status(party_status)
         elif packet.type == packets.PacketType.INIT:
-            init_packet = packets.InitPacket.process_raw_data(packet.payload)
+            init_packet = packets.InitPacket.decode(packet.payload)
             self.client.start_game(init_packet)
     
     def _process_ingame_packet(self, packet):
         """Get the actions and the turn number from the received packet and
         ask the client to commit them."""
         if packet.type == packets.PacketType.ACTION:
-            actions_packet = packets.ActionsCommitPacket.process_raw_data(packet.payload)
+            actions_packet = packets.ActionsCommitPacket.decode(packet.payload)
             self.client.controller.execute_turn(actions_packet.turn, actions_packet.actions)
     
     def _do_on_shutdown(self):

@@ -35,7 +35,7 @@ class BotClient(object):
         p = packets.GamePacket.recv(self.sock)
         if p.type == packets.LobbyPacket.TYPE:
             # find the party under the given no and return its address
-            p = packets.LobbyPacket.process_raw_data(p.payload)
+            p = packets.LobbyPacket.decode(p.payload)
             for party in p.parties:
                 if party.id == party_no:
                     return (party.ip, party.port)

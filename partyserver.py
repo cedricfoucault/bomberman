@@ -117,8 +117,6 @@ class PartyServer(Server):
         # create a packet to commit these actions
         commit_packet = packets.ActionsCommitPacket(self.current_turn, actions)
         if DEBUG: print commit_packet
-        # response = packets.ResponsePacket(packets.ActionsCommitPacket.TYPE,
-        #                                             commit_packet.get_raw_data())
         response = commit_packet.wrap()
         # send it to every client in the party
         self.send_to_all(response)
@@ -163,7 +161,7 @@ class PartyServer(Server):
         """Save a client action packet in the action record"""
         # process the received packet to retrieve the requested action
         if (packet.type == packets.ActionRequestPacket.TYPE):
-            action_packet = packets.ActionRequestPacket.process_raw_data(packet.payload)
+            action_packet = packets.ActionRequestPacket.decode(packet.payload)
         # process the packet if it is not outdated (given turn is the current turn)
         # or if DUMP_OLD_PACKET was set to False
             if self.current_turn == action_packet.turn or (not DUMP_OLD_PACKET):
