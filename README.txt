@@ -47,7 +47,9 @@ OR
 * Use CTRL+C to close the bot.
 
 --------------------------------- CONTACT -------------------------------
-cedric.foucault@gmail.com
+mail: cedric.foucault@gmail.com
+
+github repo: https://github.com/rez-antlion/bomberman
 
 Thank you for checking this out!
 
