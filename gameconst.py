@@ -1,33 +1,27 @@
 import enum
 
-NUM_PLAYERS = 4
-
-# BOARD_WIDTH = 170
-BOARD_WIDTH = 17
-# BOARD_HEIGHT = 150
-BOARD_HEIGHT = 15
-# BLOCK_SIZE = 10 # 1 block = 10*10 board unit
-# TILE_HEIGHT = BOARD_WIDTH / BLOCK_SIZE
-# TILE_WIDTH = BOARD_HEIGHT / BLOCK_SIZE
-
-# ROUND_INTERVAL = 50 # 50 ms
-TURN_LENGTH = 0.2 # in s
-
-BOMB_COUNTER_INIT = 12
-BOMB_RADIUS = 3
-
+# display information in console
 VERBOSE = True
-PRINT_PACKETS = True
+PRINT_PACKETS = True # display every packet sent/received on the console
 DEBUG = True
 
-DUMP_OLD_PACKET = False
-# DUMP_OLD_PACKET = True
-
-USE_MONITORING = False
-# USE_MONITORING = True
+# monitoring tool
+USE_MONITORING = False # switch to True to use it
 DELAY = 200
 JITTER = 50
 
+# game constants
+NUM_PLAYERS = 4
+
+BOARD_WIDTH = 17
+BOARD_HEIGHT = 15
+
+TURN_LENGTH = 0.2 # in seconds
+BOMB_COUNTER_INIT = 12 # number of turns
+BOMB_RADIUS = 3
+
+
+DUMP_OLD_PACKET = False # switch to True to use the old version of the protocol
 
 Action = enum.enum("Action",
     ERROR = 0,

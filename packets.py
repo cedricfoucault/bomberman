@@ -58,7 +58,9 @@ class PartyInfo(object):
     
 
 class SubPacket(object):
-    # TYPE
+    """A subpacket is to be wrapped in a GamePacket before being sent"""
+    # TYPE = type number of packet
+    
     def wrap(self):
         return GamePacket(self.TYPE, self.encode())
         
@@ -349,22 +351,3 @@ class GamePacket(object):
         else:
             return struct.unpack("B", ptype_encoded)[0]
 
-class ClientPacket(GamePacket):
-    """A request packet is a game packet designed to be a client request
-    to server"""
-    payload_classes = {
-        PacketType.LOBBY: LobbyPacket,
-        PacketType.CREATE_PARTY: CreatePartyPacket,
-    
-        PacketType.PARTY_STATUS: PartyStatusPacket,
-        PacketType.INIT: InitPacket,
-        PacketType.ACTION: ActionRequestPacket
-    }
-
-class ServerPacket(GamePacket):
-    """A commit packet is a game packet designed to be a server response"""
-    payload_classes = {
-        PacketType.ACTION: ActionsCommitPacket
-    }
-
-        
