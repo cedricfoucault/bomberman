@@ -171,15 +171,10 @@ class PartyServer(Server):
                 # ------ enter critical section ------
                 # if there's no action already committed for this client,
                 # comit this action
-                # print self._action_record
-                #         if (self._action_record.get(client, default=packets.Action.DO_NOTHING)) == packets.Action.DO_NOTHING:
-                #             self._action_record = action
-                if self._action_record[client] == packets.Action.DO_NOTHING:
-                    self._action_record[client] = action
+                self._action_record[client] = action
                 # else, ignore the packet
                 # ------ exit critical section -------
                 self._action_record_lock.release()
-        # ... or process it anyway if DUMP_OLD_PACKET was set to False
     
     def get_action_record(self):
         """Get the current packet record"""
